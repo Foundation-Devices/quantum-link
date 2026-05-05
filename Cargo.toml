@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "ql-codec",
   "ql-common",
+  "ql-api",
   "ql-fsm",
   "ql-rpc",
   "ql-runtime",
