@@ -1155,6 +1155,7 @@ dependencies = [
  "bytes",
  "ciborium",
  "flutter_rust_bridge",
+ "ql-common",
  "ql-rpc",
  "serde",
 ]
