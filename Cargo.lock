@@ -438,6 +438,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ql-rpc"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "trait-variant",
+]
+
+[[package]]
 name = "ql-wire"
 version = "0.1.0"
 dependencies = [
@@ -632,6 +640,17 @@ name = "tls_codec_derive"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2d2e76690929402faae40aebdda620a2c0e25dd6d3b9afe48867dfd95991f4bd"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "trait-variant"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70977707304198400eb4835a78f6a9f928bf41bba420deb8fdb175cd965d77a7"
 dependencies = [
  "proc-macro2",
  "quote",
