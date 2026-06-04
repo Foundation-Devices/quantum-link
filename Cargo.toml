@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+  "ql-fsm",
   "ql-wire",
 ]
 
@@ -12,4 +13,4 @@ license = "MIT OR Apache-2.0"
 bytes = "1"
 
 # workspace crates
-
+ql-wire = { path = "ql-wire" }

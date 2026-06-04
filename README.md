@@ -5,6 +5,7 @@ This monorepo contains the Quantum Link protocol crates.
 ## Crates
 
 -   **ql-wire**: QuantumLink wire-format definitions
+-   **ql-fsm**: QuantumLink Sans-IO protocol finite state machine
 
 ## Development
 
