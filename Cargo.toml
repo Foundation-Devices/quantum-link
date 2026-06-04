@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-
+  "ql-wire",
 ]
 
 [workspace.package]
@@ -9,7 +9,7 @@ homepage = "https://github.com/Foundation-Devices/quantum-link"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-
+bytes = "1"
 
 # workspace crates
 

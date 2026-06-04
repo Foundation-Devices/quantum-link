@@ -4,7 +4,7 @@ This monorepo contains the Quantum Link protocol crates.
 
 ## Crates
 
-
+-   **ql-wire**: QuantumLink wire-format definitions
 
 ## Development
 
