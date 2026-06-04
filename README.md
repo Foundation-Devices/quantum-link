@@ -6,6 +6,7 @@ This monorepo contains the Quantum Link protocol crates.
 
 -   **ql-wire**: QuantumLink wire-format definitions
 -   **ql-fsm**: QuantumLink Sans-IO protocol finite state machine
+-   **ql-runtime**: QuantumLink async runtime
 -   **ql-rpc**: RPC modality layer over QuantumLink streams
 
 ## Development
