@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = [
+
+]
+
+[workspace.package]
+homepage = "https://github.com/Foundation-Devices/quantum-link"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+
+
+# workspace crates
+

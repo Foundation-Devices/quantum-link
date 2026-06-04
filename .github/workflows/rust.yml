@@ -1,0 +1,40 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Git Credentials via gh CLI
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          gh auth setup-git
+
+      - name: Setup nix
+        uses: DeterminateSystems/determinate-nix-action@v3.11.1
+      
+      - name: Check formatting
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: nix develop --command cargo fmt --all -- --check
+
+      - name: Run Clippy (fail on warnings)
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: nix develop --command cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run tests
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: nix develop --command cargo test --verbose
