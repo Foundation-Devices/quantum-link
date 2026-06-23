@@ -4,6 +4,7 @@ This monorepo contains the Quantum Link protocol crates.
 
 ## Crates
 
+-   **ql-common**: Shared protocol types
 -   **ql-wire**: QuantumLink wire-format definitions
 -   **ql-fsm**: QuantumLink Sans-IO protocol finite state machine
 -   **ql-runtime**: QuantumLink async runtime

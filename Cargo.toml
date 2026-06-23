@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+  "ql-common",
   "ql-fsm",
   "ql-rpc",
   "ql-runtime",
@@ -15,6 +16,7 @@ license = "MIT OR Apache-2.0"
 bytes = "1"
 
 # workspace crates
+ql-common = { path = "ql-common" }
 ql-fsm = { path = "ql-fsm" }
 ql-rpc = { path = "ql-rpc" }
 ql-wire = { path = "ql-wire" }
