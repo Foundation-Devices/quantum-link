@@ -11,6 +11,7 @@ This monorepo contains the Quantum Link protocol crates.
 -   **ql-runtime**: QuantumLink async runtime
 -   **ql-rpc**: RPC modality layer over QuantumLink streams
 -   **ql-api**: Application message definitions
+-   **ql-keyos**: KeyOS addressing primitives
 
 ## Development
 
