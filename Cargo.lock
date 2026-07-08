@@ -1155,7 +1155,6 @@ dependencies = [
  "bytes",
  "ciborium",
  "flutter_rust_bridge",
- "ql-common",
  "ql-keyos",
  "ql-rpc",
  "serde",
@@ -1192,8 +1191,6 @@ dependencies = [
 name = "ql-keyos"
 version = "0.1.0"
 dependencies = [
- "bytes",
- "ql-common",
  "serde",
 ]
 
