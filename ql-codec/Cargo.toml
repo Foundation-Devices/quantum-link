@@ -1,0 +1,9 @@
+[package]
+name = "ql-codec"
+version = "0.1.0"
+edition = "2021"
+description = "QuantumLink binary codec primitives"
+license.workspace = true
+
+[dependencies]
+bytes = { workspace = true }

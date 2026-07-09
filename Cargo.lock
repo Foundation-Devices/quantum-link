@@ -806,6 +806,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ql-codec"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+]
+
+[[package]]
 name = "ql-common"
 version = "0.1.0"
 
