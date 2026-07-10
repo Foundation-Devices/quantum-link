@@ -1194,6 +1194,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "ql-codec",
+ "ql-rpc",
  "serde",
 ]
 
