@@ -4,6 +4,7 @@ members = [
   "ql-codec",
   "ql-common",
   "ql-keyos",
+  "ql-relay",
   "ql-api",
   "ql-fsm",
   "ql-rpc",

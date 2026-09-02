@@ -10,6 +10,7 @@ This monorepo contains the Quantum Link protocol crates.
 -   **ql-fsm**: QuantumLink Sans-IO protocol finite state machine
 -   **ql-runtime**: QuantumLink async runtime
 -   **ql-rpc**: RPC modality layer over QuantumLink streams
+-   **ql-relay**: Relay protocol and client
 -   **ql-api**: Application message definitions
 -   **ql-keyos**: KeyOS addressing primitives
 
