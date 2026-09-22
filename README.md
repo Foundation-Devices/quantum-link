@@ -4,6 +4,7 @@ This monorepo contains the Quantum Link protocol crates.
 
 ## Crates
 
+-   **ql-btp**: QuantumLink BTP framing for splitting records into MTU-sized chunks
 -   **ql-codec**: Binary codec primitives
 -   **ql-common**: Shared protocol types
 -   **ql-wire**: QuantumLink wire-format definitions

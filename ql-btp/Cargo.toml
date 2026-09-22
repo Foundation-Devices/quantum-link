@@ -1,0 +1,13 @@
+[package]
+name = "ql-btp"
+version = "0.1.0"
+edition = "2021"
+homepage.workspace = true
+license.workspace = true
+
+[dependencies]
+bytes = { workspace = true }
+consts = { git = "https://github.com/Foundation-Devices/prime-ble-firmware.git", features = [
+    "dle",
+] }
+ql-codec = { workspace = true }

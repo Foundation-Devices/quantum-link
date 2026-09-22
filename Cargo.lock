@@ -278,6 +278,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "consts"
+version = "1.0.0"
+source = "git+https://github.com/Foundation-Devices/prime-ble-firmware.git#543345473e874d7b45c47b386168ff24b9b7f060"
+
+[[package]]
 name = "core-models"
 version = "0.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1159,6 +1164,15 @@ dependencies = [
  "ql-keyos",
  "ql-rpc",
  "serde",
+]
+
+[[package]]
+name = "ql-btp"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "consts",
+ "ql-codec",
 ]
 
 [[package]]
