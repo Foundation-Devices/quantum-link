@@ -1,10 +1,9 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use bytes::BufMut;
-use consts::APP_MTU;
 use ql_codec::Encode;
 
-use crate::{Header, CHUNK_DATA_SIZE, MAX_RECORD_SIZE, V2_TAG_BITS};
+use crate::{Header, APP_MTU, CHUNK_DATA_SIZE, MAX_RECORD_SIZE, V2_TAG_BITS};
 
 pub struct Chunker<'a> {
     data: &'a [u8],

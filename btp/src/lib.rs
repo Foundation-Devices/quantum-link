@@ -6,9 +6,10 @@ mod dechunk;
 #[cfg(test)]
 mod tests;
 
-use consts::APP_MTU;
-
 pub const MAX_RECORD_SIZE: usize = 128 * 1024;
+// ble firmware mtu with dle enabled
+// https://github.com/Foundation-Devices/prime-ble-firmware/blob/543345473e874d7b45c47b386168ff24b9b7f060/consts/src/lib.rs#L10
+pub const APP_MTU: usize = 244;
 pub const HEADER_SIZE: usize = size_of::<u16>() * 2 + size_of::<u32>();
 pub const CHUNK_DATA_SIZE: usize = APP_MTU - HEADER_SIZE;
 
