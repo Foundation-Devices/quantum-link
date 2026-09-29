@@ -1,4 +1,7 @@
-//! Shared QuantumLink primitive types.
+//! shared identifiers and stream status types for QuantumLink
+//!
+//! [`QID`] identifies a peer and [`StreamId`] identifies a stream within a session
+//! [`ResetCode`] names common reasons for ending a stream or call
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]

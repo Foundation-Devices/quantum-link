@@ -1,4 +1,7 @@
-//! Small binary codec primitives shared by QuantumLink crates.
+//! binary codec primitives shared by QuantumLink crates
+//!
+//! [`Encode`] and [`Decode`] define the wire encoding for protocol types
+//! [`Reader`] and [`ByteSlice`] support decoding from borrowed or owned bytes
 
 mod buf_view;
 mod codec;

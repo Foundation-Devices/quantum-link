@@ -1,3 +1,9 @@
+//! application messages carried over QuantumLink RPC
+//!
+//! feature modules define requests, responses, events, and payloads for one area
+//! such as onboarding, keys, firmware, or system operations
+//! these types sit above the protocol streams and RPC machinery
+
 #[macro_use]
 mod macros;
 

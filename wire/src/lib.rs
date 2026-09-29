@@ -1,6 +1,8 @@
+//! QuantumLink wire records and authenticated handshakes
 //!
-//! QuantumLink protocol wire format
-//!
+//! defines peer identities, routing and session headers, encrypted frames,
+//! and the [`IK`](IkPattern::Ik), [`KK`](IkPattern::Kk), and [`XX`](XxHandshake) handshakes
+//! [`QlCrypto`] supplies the key establishment and encryption operations
 
 #![allow(clippy::too_many_arguments)]
 

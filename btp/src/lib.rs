@@ -1,3 +1,8 @@
+//! chunking for QuantumLink records over BLE
+//!
+//! [`Chunker`] splits a record into fixed size packets with a sequence and index
+//! [`Dechunker`] accepts packets out of order and yields the record once complete
+
 pub use chunk::*;
 pub use dechunk::*;
 

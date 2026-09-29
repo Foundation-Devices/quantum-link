@@ -1,4 +1,8 @@
-//! KeyOS addressing primitives for QuantumLink
+//! KeyOS routing identifiers for QuantumLink applications and services
+//!
+//! [`AppId`] names an app and [`ServiceId`] names a service
+//! route keys pair these identifiers with [`RouteId`] for RPC dispatch
+//! [`PeerPermissions`] lists the apps a peer may access
 
 use ql_codec::{ByteSlice, Decode, Encode, Reader};
 

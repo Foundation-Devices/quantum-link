@@ -1,22 +1,25 @@
 //! sync finite state machine for QuantumLink protocol
 //!
-//! a caller drives `QlFsm` inside its own event loop
+//! a caller drives [`QlFsm`] inside its own event loop
 //!
 //! inputs to that loop usually include
-//! - app actions like `bind_peer`, `connect_ik`, `connect_kk`, `connect_xx`, `open_stream`, or
-//!   `stream`
-//! - inbound transport bytes passed to `receive`
-//! - a deadline expiring, handled by calling `on_timer`
-//! - transport write results passed to `complete_write`
+//! - app actions like [`bind_peer`](QlFsm::bind_peer), [`connect_ik`](QlFsm::connect_ik),
+//!   [`connect_kk`](QlFsm::connect_kk), [`connect_xx`](QlFsm::connect_xx),
+//!   [`open_stream`](QlFsm::open_stream), or [`stream`](QlFsm::stream)
+//! - inbound transport bytes passed to [`receive`](QlFsm::receive)
+//! - a deadline expiring, handled by calling [`on_timer`](QlFsm::on_timer)
+//! - transport write results passed to [`complete_write`](QlFsm::complete_write)
 //!
-//! outputs from `QlFsm` are
-//! - outbound session and handshake records from `take_next_write`
-//! - queued `Event`s returned by `poll_event` after `connect_ik`, `connect_kk`,
-//!   `connect_xx`, `receive`, and `on_timer`
-//! - stream callbacks on `StreamMeta`
+//! outputs from [`QlFsm`] are
+//! - outbound session and handshake records from [`take_next_write`](QlFsm::take_next_write)
+//! - queued [`Event`]s returned by [`poll_event`](QlFsm::poll_event) after
+//!   [`connect_ik`](QlFsm::connect_ik), [`connect_kk`](QlFsm::connect_kk),
+//!   [`connect_xx`](QlFsm::connect_xx), [`receive`](QlFsm::receive), and
+//!   [`on_timer`](QlFsm::on_timer)
+//! - stream callbacks on [`StreamMeta`]
 //!
-//! call `next_deadline` after handling current inputs and any queued outputs
-//! use it to decide how long the outer loop can wait before `on_timer` must run
+//! call [`next_deadline`](QlFsm::next_deadline) after handling current inputs and any queued outputs
+//! use it to decide how long the outer loop can wait before [`on_timer`](QlFsm::on_timer) must run
 //! another input may arrive before that deadline, which is fine
 
 mod error;

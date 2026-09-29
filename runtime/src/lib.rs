@@ -1,3 +1,9 @@
+//! async driver for QuantumLink sessions and streams
+//!
+//! [`QlPlatform`] supplies transport IO, timers, crypto, and peer persistence
+//! [`Runtime`] drives the protocol state machine while [`RuntimeHandle`] lets
+//! callers connect peers and open streams
+
 pub use ql_fsm::{NoSessionError, PairingInvite, StreamOptions};
 
 pub use self::{
