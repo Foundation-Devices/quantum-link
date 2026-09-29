@@ -1,16 +1,16 @@
 [workspace]
 resolver = "2"
 members = [
-  "ql-btp",
-  "ql-codec",
-  "ql-common",
-  "ql-keyos",
-  "ql-router",
-  "ql-api",
-  "ql-fsm",
-  "ql-rpc",
-  "ql-runtime",
-  "ql-wire",
+  "btp",
+  "codec",
+  "common",
+  "keyos",
+  "router",
+  "api",
+  "fsm",
+  "rpc",
+  "runtime",
+  "wire",
 ]
 
 [workspace.package]
@@ -21,9 +21,9 @@ license = "MIT OR Apache-2.0"
 bytes = "1"
 
 # workspace crates
-ql-codec = { path = "ql-codec" }
-ql-common = { path = "ql-common" }
-ql-fsm = { path = "ql-fsm" }
-ql-keyos = { path = "ql-keyos" }
-ql-rpc = { path = "ql-rpc" }
-ql-wire = { path = "ql-wire" }
+ql-codec = { path = "codec" }
+ql-common = { path = "common" }
+ql-fsm = { path = "fsm" }
+ql-keyos = { path = "keyos" }
+ql-rpc = { path = "rpc" }
+ql-wire = { path = "wire" }
