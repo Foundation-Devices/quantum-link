@@ -6,9 +6,15 @@ const PAIRING_ID_DOMAIN: &[u8] = b"ql-wire:pairing-id:v1";
 const PAIRING_PSK_DOMAIN: &[u8] = b"ql-wire:pairing-psk:v1";
 
 ql_codec::codec! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    #[derive(Clone, Copy, PartialEq, Eq, Hash)]
     #[repr(transparent)]
     pub struct PairingToken(pub [u8; Self::SIZE]);
+}
+
+impl fmt::Debug for PairingToken {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("PairingToken(<redacted>)")
+    }
 }
 
 impl PairingToken {

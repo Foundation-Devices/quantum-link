@@ -9,8 +9,14 @@ const ML_KEM_1024_PRIVATE_KEY_SIZE: usize = 3168;
 const ML_KEM_1024_CIPHERTEXT_SIZE: usize = 1568;
 
 ql_codec::codec! {
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct SessionKey(pub [u8; Self::SIZE]);
+}
+
+impl std::fmt::Debug for SessionKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SessionKey(<redacted>)")
+    }
 }
 
 impl SessionKey {
@@ -57,8 +63,14 @@ impl Drop for MlKemPublicKey {
 }
 
 ql_codec::codec! {
-    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct MlKemPrivateKey(Box<[u8; MlKemPrivateKey::SIZE]>);
+}
+
+impl std::fmt::Debug for MlKemPrivateKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("MlKemPrivateKey(<redacted>)")
+    }
 }
 
 impl MlKemPrivateKey {

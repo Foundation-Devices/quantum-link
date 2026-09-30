@@ -166,11 +166,17 @@ impl CipherState {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct SymmetricState {
     chaining_key: [u8; 32],
     handshake_hash: [u8; 32],
     cipher: CipherState,
+}
+
+impl std::fmt::Debug for SymmetricState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SymmetricState(<redacted>)")
+    }
 }
 
 impl SymmetricState {
