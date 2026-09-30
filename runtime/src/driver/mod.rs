@@ -36,7 +36,7 @@ impl<P: QlPlatform> Runtime<P> {
 
         let mut state = DriverState {
             runtime_tx: tx,
-            max_concurrent_message_writes: config.max_concurrent_message_writes,
+            max_concurrent_message_writes: config.max_concurrent_message_writes.max(1),
             terminal_write: None,
         };
 
