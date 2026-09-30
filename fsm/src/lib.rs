@@ -324,11 +324,13 @@ impl<M: StreamMeta> QlFsm<M> {
     }
 
     /// opens a new outgoing stream
+    ///
+    /// the header must leave room in the record budget for framing and one payload byte
     pub fn open_stream(
         &mut self,
         header: Box<[u8]>,
         options: StreamOptions,
-    ) -> Result<StreamOps<'_, M>, NoSessionError> {
+    ) -> Result<StreamOps<'_, M>, OpenStreamError> {
         fsm::open_stream(self, header, options)
     }
 

@@ -21,7 +21,7 @@ use ql_wire::{
 use tokio::{task::LocalSet, time::Sleep};
 
 use crate::{
-    new_runtime, platform::QlTimer, NoSessionError, PairingInvite, QlFsmConfig, QlStream,
+    new_runtime, platform::QlTimer, OpenStreamError, PairingInvite, QlFsmConfig, QlStream,
     QlStreamError, RuntimeConfig, RuntimeHandle, StreamOptions,
 };
 

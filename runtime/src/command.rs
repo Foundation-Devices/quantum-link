@@ -1,5 +1,5 @@
 use ql_common::{ResetCode, StreamId};
-use ql_fsm::{NoSessionError, PairingInvite, StreamOptions, StreamResetTarget};
+use ql_fsm::{OpenStreamError, PairingInvite, StreamOptions, StreamResetTarget};
 use ql_wire::{PairingToken, PeerBundle, SessionCloseCode};
 
 use crate::{StreamReader, StreamWriter};
@@ -19,7 +19,7 @@ pub enum Command {
     OpenStream {
         header: Box<[u8]>,
         options: StreamOptions,
-        start: oneshot::Sender<Result<(StreamReader, StreamWriter), NoSessionError>>,
+        start: oneshot::Sender<Result<(StreamReader, StreamWriter), OpenStreamError>>,
     },
     PollInbound {
         stream_id: StreamId,

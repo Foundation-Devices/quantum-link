@@ -9,8 +9,8 @@ use crate::{
     handshake,
     session::{self, SessionEvent},
     state::LinkState,
-    Event, NoPeerError, NoSessionError, OutboundWrite, QlFsm, ReceiveError, ReceiveStage,
-    StreamError, StreamMeta, WriteId,
+    Event, NoPeerError, NoSessionError, OpenStreamError, OutboundWrite, QlFsm, ReceiveError,
+    ReceiveStage, StreamError, StreamMeta, WriteId,
 };
 
 pub struct EventSink<'a> {
@@ -239,10 +239,10 @@ pub fn open_stream<M: StreamMeta>(
     fsm: &mut QlFsm<M>,
     header: Box<[u8]>,
     options: crate::StreamOptions,
-) -> Result<crate::StreamOps<'_, M>, NoSessionError> {
+) -> Result<crate::StreamOps<'_, M>, OpenStreamError> {
     let QlFsm { state, .. } = fsm;
     let conn = state.link.connected_mut_or_err()?;
-    Ok(conn.session.open_stream(header, options))
+    conn.session.open_stream(header, options)
 }
 
 pub fn stream<M: StreamMeta>(

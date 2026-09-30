@@ -6,8 +6,8 @@ use ql_wire::SessionClose;
 
 use super::*;
 use crate::{
-    state::LinkState, CommitReadError, Event, NoSessionError, PeerStatus, ReaderState, StreamError,
-    StreamOptions, WriterState,
+    state::LinkState, CommitReadError, Event, NoSessionError, OpenStreamError, PeerStatus,
+    ReaderState, StreamError, StreamOptions, WriterState,
 };
 
 fn open_stream_id(fsm: &mut QlFsm<()>) -> StreamId {
@@ -185,7 +185,7 @@ fn disconnected_stream_operations_fail_with_no_session() {
             .a
             .fsm
             .open_stream(Box::from([1]), StreamOptions::default()),
-        Err(NoSessionError)
+        Err(OpenStreamError::NoSession)
     ));
     assert_eq!(
         write_stream_bytes(&mut harness.a.fsm, missing, b"queued"),
@@ -364,7 +364,7 @@ fn close_session_disconnects_locally() {
             .a
             .fsm
             .open_stream(Box::from([1]), StreamOptions::default()),
-        Err(NoSessionError)
+        Err(OpenStreamError::NoSession)
     ));
     assert_eq!(harness.a.fsm.queue_ping(), Err(NoSessionError));
     assert!(matches!(
@@ -397,7 +397,7 @@ fn unpair_clears_bound_peer_and_emits_unpair_frame() {
             .a
             .fsm
             .open_stream(Box::from([1]), StreamOptions::default()),
-        Err(NoSessionError)
+        Err(OpenStreamError::NoSession)
     ));
     assert_eq!(harness.a.fsm.queue_ping(), Err(NoSessionError));
 
@@ -446,7 +446,7 @@ fn inbound_unpair_clears_remote_peer_binding() {
             .b
             .fsm
             .open_stream(Box::from([1]), StreamOptions::default()),
-        Err(NoSessionError)
+        Err(OpenStreamError::NoSession)
     ));
     assert!(matches!(harness.connect_ik(Side::B), Err(NoPeerError)));
 

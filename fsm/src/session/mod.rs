@@ -35,7 +35,7 @@ use self::{
     stream_tx::StreamTxRange,
     tracked::{LossRecovery, TrackedFrame, TrackedRecord, TrackedStreamData},
 };
-use crate::{StreamError, StreamMeta, StreamResetEvent, StreamResetTarget};
+use crate::{OpenStreamError, StreamError, StreamMeta, StreamResetEvent, StreamResetTarget};
 
 #[derive(Debug, Clone, Copy)]
 pub struct SessionConfig {
@@ -167,7 +167,19 @@ impl<M: StreamMeta> SessionFsm<M> {
         }
     }
 
-    pub fn open_stream(&mut self, header: Box<[u8]>, options: StreamOptions) -> StreamOps<'_, M> {
+    pub fn open_stream(
+        &mut self,
+        header: Box<[u8]>,
+        options: StreamOptions,
+    ) -> Result<StreamOps<'_, M>, OpenStreamError> {
+        let header_capacity = self.config.record_max_size.saturating_sub(
+            SessionRecordBuilder::MIN_CAPACITY + 1 + StreamData::<Vec<u8>>::MAX_OPEN_WIRE_OVERHEAD,
+        );
+        // reserve one payload byte so the stream can make progress
+        if header.len() >= header_capacity {
+            return Err(OpenStreamError::HeaderTooLarge);
+        }
+
         let receive_window = options
             .receive_window
             .unwrap_or(self.config.initial_stream_receive_window)
@@ -204,7 +216,7 @@ impl<M: StreamMeta> SessionFsm<M> {
             ),
         );
         let stream_index = self.state.streams.len() - 1;
-        StreamOps::new(self, stream_id, stream_index)
+        Ok(StreamOps::new(self, stream_id, stream_index))
     }
 
     pub fn stream(&mut self, stream_id: StreamId) -> Result<StreamOps<'_, M>, StreamError> {

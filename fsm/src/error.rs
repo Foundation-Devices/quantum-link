@@ -105,6 +105,29 @@ impl Display for NoSessionError {
 impl Error for NoSessionError {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenStreamError {
+    HeaderTooLarge,
+    NoSession,
+}
+
+impl Display for OpenStreamError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::HeaderTooLarge => "stream header exceeds record budget",
+            Self::NoSession => "no session",
+        })
+    }
+}
+
+impl Error for OpenStreamError {}
+
+impl From<NoSessionError> for OpenStreamError {
+    fn from(_: NoSessionError) -> Self {
+        Self::NoSession
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamError {
     MissingStream,
     NoSession,

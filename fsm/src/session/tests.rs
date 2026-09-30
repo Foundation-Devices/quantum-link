@@ -13,8 +13,8 @@ use super::{
     SessionConfig, SessionEvent, SessionParams, StreamOptions,
 };
 use crate::{
-    session::stream_parity::StreamParity, ReaderState, StreamIo, StreamMeta, StreamResetEvent,
-    WriterState,
+    session::stream_parity::StreamParity, OpenStreamError, ReaderState, StreamIo, StreamMeta,
+    StreamResetEvent, WriterState,
 };
 
 const REFUSED: ResetCode = ResetCode(1);
@@ -65,6 +65,7 @@ impl StreamMeta for TestMeta {
 
 fn open_stream_id(fsm: &mut super::SessionFsm<()>) -> StreamId {
     fsm.open_stream(Box::from([1]), StreamOptions::default())
+        .unwrap()
         .io()
         .stream_id()
 }
@@ -330,7 +331,7 @@ fn tracked_record_count_is_bounded() {
             record_max_size: SessionRecordBuilder::MIN_CAPACITY
                 + 1
                 + StreamData::<Vec<u8>>::MAX_OPEN_WIRE_OVERHEAD
-                + 1,
+                + 2,
             stream_send_buffer_size: PAYLOAD_LEN,
             ..SessionConfig::default()
         },
@@ -419,6 +420,7 @@ fn ack_reopens_write_capacity() {
     );
     let stream_id = fsm
         .open_stream(Box::from([1]), StreamOptions::default())
+        .unwrap()
         .io()
         .stream_id();
 
@@ -454,6 +456,7 @@ fn ack_of_fin_notifies_metadata_once() {
         super::SessionFsm::<TestMeta>::new(SessionConfig::default(), SessionParams::default(), now);
     let stream_id = fsm
         .open_stream(Box::from([1]), StreamOptions::default())
+        .unwrap()
         .io()
         .stream_id();
 
@@ -702,6 +705,7 @@ fn readable_callback_can_consume_stream_data() {
         super::SessionFsm::<TestMeta>::new(SessionConfig::default(), SessionParams::default(), now);
     let stream_id = fsm
         .open_stream(Box::from([1]), StreamOptions::default())
+        .unwrap()
         .io()
         .stream_id();
     fsm.stream(stream_id).unwrap().metadata_mut().consume_reads = true;
@@ -756,6 +760,7 @@ fn local_stream_reset_is_reliable_and_notifies_metadata() {
     );
     let stream_id = fsm
         .open_stream(Box::from([1]), StreamOptions::default())
+        .unwrap()
         .io()
         .stream_id();
 
@@ -802,6 +807,7 @@ fn stream_ids_follow_even_odd_xid_ordering() {
         now,
     )
     .open_stream(vec![1_u8].into_boxed_slice(), StreamOptions::default())
+    .unwrap()
     .io()
     .stream_id();
     let odd_id = super::SessionFsm::<()>::new(
@@ -813,6 +819,7 @@ fn stream_ids_follow_even_odd_xid_ordering() {
         now,
     )
     .open_stream(vec![1_u8].into_boxed_slice(), StreamOptions::default())
+    .unwrap()
     .io()
     .stream_id();
 
@@ -1226,6 +1233,7 @@ fn default_stream_options_inherit_session_and_peer_values() {
     );
     let stream_id = fsm
         .open_stream(Box::from([1]), StreamOptions::default())
+        .unwrap()
         .io()
         .stream_id();
     assert_eq!(write_stream_bytes(&mut fsm, stream_id, b"0123456789"), 4);
@@ -1259,6 +1267,7 @@ fn opening_frame_carries_normalized_stream_options() {
                 send_buffer_size: Some(4),
             },
         )
+        .unwrap()
         .io()
         .stream_id();
     assert_eq!(write_stream_bytes(&mut fsm, stream_id, b"data"), 4);
@@ -1367,6 +1376,7 @@ fn streams_have_independent_send_buffer_sizes() {
                 ..StreamOptions::default()
             },
         )
+        .unwrap()
         .io()
         .stream_id();
     let large = fsm
@@ -1377,6 +1387,7 @@ fn streams_have_independent_send_buffer_sizes() {
                 ..StreamOptions::default()
             },
         )
+        .unwrap()
         .io()
         .stream_id();
 
@@ -1468,24 +1479,35 @@ fn sparse_out_of_order_ack_ranges_page_and_quiesce() {
 }
 
 #[test]
-fn stream_header_larger_than_the_record_budget_does_not_panic() {
+fn stream_header_must_leave_room_for_payload() {
     let now = Instant::now();
-    let record_max_size = SessionRecordBuilder::MIN_CAPACITY + 256;
     let mut fsm = super::SessionFsm::<()>::new(
         SessionConfig {
-            record_max_size,
+            record_max_size: SessionRecordBuilder::MIN_CAPACITY
+                + 1
+                + StreamData::<Vec<u8>>::MAX_OPEN_WIRE_OVERHEAD
+                + 4,
             ..SessionConfig::default()
         },
         SessionParams::default(),
         now,
     );
 
-    // The header rides in the same frame as the payload, so one this large leaves no room.
+    assert!(matches!(
+        fsm.open_stream(Box::from([7u8; 4]), StreamOptions::default()),
+        Err(OpenStreamError::HeaderTooLarge)
+    ));
+
+    fsm.state.next_record_seq = RecordSeq(u64::MAX - 1);
     let stream_id = fsm
-        .open_stream(Box::from(vec![7u8; 256]), StreamOptions::default())
+        .open_stream(Box::from([7u8; 3]), StreamOptions::default())
+        .unwrap()
         .io()
         .stream_id();
-    assert_eq!(write_stream_bytes(&mut fsm, stream_id, b"payload"), 7);
-
-    assert!(next_outbound(&mut fsm, now).is_none());
+    assert_eq!(write_stream_bytes(&mut fsm, stream_id, b"p"), 1);
+    let (_, frames) = next_outbound(&mut fsm, now).unwrap();
+    assert!(matches!(
+        frames.as_slice(),
+        [SessionFrame::StreamData(frame)] if frame.bytes.as_slice() == b"p"
+    ));
 }

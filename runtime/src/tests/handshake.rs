@@ -22,7 +22,7 @@ async fn opening_stream_requires_connection() {
                 .handle
                 .open_stream(test_open_stream_params(), StreamOptions::default())
                 .await,
-            Err(NoSessionError)
+            Err(OpenStreamError::NoSession)
         ));
     })
     .await;

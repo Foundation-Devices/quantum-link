@@ -4,7 +4,7 @@
 //! [`Runtime`] drives the protocol state machine while [`RuntimeHandle`] lets
 //! callers connect peers and open streams
 
-pub use ql_fsm::{NoSessionError, PairingInvite, StreamOptions};
+pub use ql_fsm::{NoSessionError, OpenStreamError, PairingInvite, StreamOptions};
 
 pub use self::{
     error::{QlStreamError, ResetOrigin},

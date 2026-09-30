@@ -179,14 +179,14 @@ async fn unpair_aborts_active_streams_and_prevents_reconnect() {
                 .handle
                 .open_stream(test_open_stream_params(), StreamOptions::default())
                 .await,
-            Err(NoSessionError)
+            Err(OpenStreamError::NoSession)
         ));
         assert!(matches!(
             pair.side(Side::B)
                 .handle
                 .open_stream(test_open_stream_params(), StreamOptions::default())
                 .await,
-            Err(NoSessionError)
+            Err(OpenStreamError::NoSession)
         ));
 
         pair.side(Side::B).handle.connect();
