@@ -100,7 +100,7 @@ impl RxInner {
 /// writer-lane shared state
 ///
 /// finish and fail race to establish the terminal result
-/// terminal errors are stored in the slot
+/// terminal errors are stored before readiness is published
 pub struct TxInner {
     slot: Slot<Item>,
     changed: DiatomicWaker,
@@ -108,8 +108,9 @@ pub struct TxInner {
 
 impl TxInner {
     const FINISH_REQUESTED: usize = 1 << 2;
-    const TERMINAL_READY: usize = 1 << 3;
-    const TERMINAL_OK: usize = 1 << 4;
+    const TERMINAL_SET: usize = 1 << 3;
+    pub const TERMINAL_READY: usize = 1 << 4;
+    pub const TERMINAL_OK: usize = 1 << 5;
 
     fn new() -> Self {
         Self {
@@ -122,24 +123,12 @@ impl TxInner {
         self.slot.load_state()
     }
 
-    pub fn finish_requested(state: usize) -> bool {
-        state & Self::FINISH_REQUESTED != 0
-    }
-
-    pub fn terminal_ready(state: usize) -> bool {
-        state & Self::TERMINAL_READY != 0
-    }
-
-    pub fn terminal_ok(state: usize) -> bool {
-        state & Self::TERMINAL_OK != 0
-    }
-
     pub fn try_write(&self, bytes: Bytes) -> Result<(), PushError<Bytes>> {
         try_write_chunk(
             &self.slot,
             &self.changed,
             bytes,
-            Self::FINISH_REQUESTED | Self::TERMINAL_READY,
+            Self::FINISH_REQUESTED | Self::TERMINAL_SET,
         )
     }
 
@@ -154,11 +143,11 @@ impl TxInner {
     pub fn finish(&self) {
         let mut state = self.slot.load_state();
         loop {
-            if Self::terminal_ready(state) {
+            if state & Self::TERMINAL_SET != 0 {
                 return;
             }
 
-            let new_state = state | Self::TERMINAL_READY | Self::TERMINAL_OK;
+            let new_state = state | Self::TERMINAL_SET | Self::TERMINAL_READY | Self::TERMINAL_OK;
             match self.slot.compare_exchange(state, new_state) {
                 Ok(()) => {
                     self.changed.notify();
@@ -177,11 +166,11 @@ impl TxInner {
     ) -> Result<Option<Bytes>, ForcePushError<QlStreamError>> {
         let mut state = self.slot.load_state();
         loop {
-            if Self::terminal_ready(state) {
+            if state & Self::TERMINAL_SET != 0 {
                 return Err(ForcePushError(error));
             }
 
-            let new_state = state | Self::TERMINAL_READY;
+            let new_state = state | Self::TERMINAL_SET;
             match self.slot.compare_exchange(state, new_state) {
                 Ok(()) => break,
                 Err(actual) => state = actual,
@@ -189,6 +178,7 @@ impl TxInner {
         }
 
         let displaced = self.slot.force_push(Item::Error(error));
+        self.slot.fetch_or(Self::TERMINAL_READY);
         self.changed.notify();
         Ok(displaced_bytes(displaced))
     }
@@ -214,7 +204,7 @@ impl TxInner {
     /// returns true once finish was requested and buffered data is drained
     pub fn is_finished(&self) -> bool {
         let state = self.load_state();
-        Self::finish_requested(state) && Slot::<Item>::is_empty_state(state)
+        state & Self::FINISH_REQUESTED != 0 && Slot::<Item>::is_empty_state(state)
     }
 
     pub fn try_read(&self, pending: &mut Bytes, max_len: usize) -> Result<Bytes, ()> {
@@ -227,7 +217,7 @@ impl TxInner {
         }
 
         let state = self.load_state();
-        if Self::terminal_ready(state) {
+        if state & Self::TERMINAL_SET != 0 {
             return Err(());
         }
 
@@ -474,7 +464,7 @@ mod loom_tests {
             let write_result = writer.join().unwrap();
             finisher.join().unwrap();
 
-            assert!(TxInner::finish_requested(shared.tx.load_state()));
+            assert!(shared.tx.load_state() & TxInner::FINISH_REQUESTED != 0);
             match write_result {
                 Ok(()) => {
                     assert_eq!(tx.try_read(&mut pending, 8), Ok(Bytes::from_static(b"abc")));
@@ -490,7 +480,7 @@ mod loom_tests {
     }
 
     #[test]
-    fn writer_fail_overwrites_buffered_chunk_and_keeps_terminal_state_observable() {
+    fn writer_error_is_available_when_terminal_state_is_observed() {
         check_model(|| {
             let shared = shared();
             shared.tx.try_write(Bytes::from_static(b"abc")).unwrap();
@@ -507,11 +497,15 @@ mod loom_tests {
                 })
             };
 
+            while shared.tx.load_state() & TxInner::TERMINAL_READY == 0 {
+                thread::yield_now();
+            }
+            let terminal = shared.tx.pop();
             failer.join().unwrap();
 
-            assert!(TxInner::terminal_ready(shared.tx.load_state()));
+            assert!(shared.tx.load_state() & TxInner::TERMINAL_READY != 0);
             shared.tx.unregister_waiter();
-            match shared.tx.pop() {
+            match terminal {
                 Ok(Item::Error(QlStreamError::StreamReset { code, .. })) => {
                     assert_eq!(code, ResetCode::CANCELLED);
                 }
@@ -553,7 +547,7 @@ mod loom_tests {
 
             shared.tx.register_waiter(Waker::noop());
             shared.tx.finish();
-            assert!(TxInner::terminal_ready(shared.tx.load_state()));
+            assert!(shared.tx.load_state() & TxInner::TERMINAL_READY != 0);
             shared.tx.unregister_waiter();
         });
     }
@@ -580,7 +574,7 @@ mod loom_tests {
             let write_result = writer.join().unwrap();
             let fail_result = failer.join().unwrap();
 
-            assert!(TxInner::terminal_ready(shared.tx.load_state()));
+            assert!(shared.tx.load_state() & TxInner::TERMINAL_READY != 0);
             match (&write_result, &fail_result) {
                 (Ok(()), Ok(Some(bytes))) => {
                     assert_eq!(Bytes::from_static(b"abc"), bytes.clone());
@@ -627,13 +621,13 @@ mod loom_tests {
             finisher.join().unwrap();
             let fail_result = failer.join().unwrap();
 
-            assert!(TxInner::terminal_ready(shared.tx.load_state()));
+            assert!(shared.tx.load_state() & TxInner::TERMINAL_READY != 0);
             match fail_result {
                 Err(_) => {
-                    assert!(TxInner::terminal_ok(shared.tx.load_state()));
+                    assert!(shared.tx.load_state() & TxInner::TERMINAL_OK != 0);
                 }
                 Ok(_) => {
-                    assert!(!TxInner::terminal_ok(shared.tx.load_state()));
+                    assert!(shared.tx.load_state() & TxInner::TERMINAL_OK == 0);
                     match shared.tx.pop() {
                         Ok(Item::Error(QlStreamError::StreamReset { code, .. })) => {
                             assert_eq!(code, ResetCode::CANCELLED);

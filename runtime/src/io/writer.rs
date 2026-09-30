@@ -180,8 +180,8 @@ impl StreamWriter {
 
     fn try_poll_terminal_ready(&mut self) -> Poll<Result<(), QlStreamError>> {
         let state = self.tx.load_state();
-        if TxInner::terminal_ready(state) {
-            if TxInner::terminal_ok(state) {
+        if state & TxInner::TERMINAL_READY != 0 {
+            if state & TxInner::TERMINAL_OK != 0 {
                 self.terminal = WriterTerminalState::Terminal(Ok(()));
                 return Poll::Ready(Ok(()));
             }
