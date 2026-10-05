@@ -1,4 +1,4 @@
-use libcrux_aesgcm::AesGcm256Key;
+use libcrux_aes::AesGcm256Key;
 use libcrux_ml_kem::mlkem1024;
 use sha2::{Digest, Sha256};
 

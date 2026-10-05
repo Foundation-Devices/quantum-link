@@ -18,7 +18,7 @@ homepage = "https://github.com/Foundation-Devices/quantum-link"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-bytes = "1"
+bytes = "1.11.1"
 
 # workspace crates
 ql-codec = { path = "codec" }

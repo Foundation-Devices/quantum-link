@@ -8,7 +8,7 @@ license.workspace = true
 [features]
 software-crypto = [
   "dep:getrandom",
-  "dep:libcrux-aesgcm",
+  "dep:libcrux-aes",
   "dep:libcrux-ml-kem",
   "dep:sha2",
 ]
@@ -18,12 +18,12 @@ bytes = { workspace = true }
 getrandom = { version = "0.2", optional = true }
 ql-codec = { workspace = true }
 ql-common = { workspace = true }
-libcrux-aesgcm = { version = "0.0.7", optional = true }
-libcrux-ml-kem = { version = "0.0.7", optional = true }
+libcrux-aes = { version = "0.0.9", optional = true }
+libcrux-ml-kem = { version = "0.0.10", optional = true }
 sha2 = { version = "0.10", optional = true }
 
 [dev-dependencies]
 getrandom = "0.2"
-libcrux-aesgcm = "0.0.7"
-libcrux-ml-kem = "0.0.7"
+libcrux-aes = "0.0.9"
+libcrux-ml-kem = "0.0.10"
 sha2 = "0.10"
