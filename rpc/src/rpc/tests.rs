@@ -440,6 +440,7 @@ fn download() {
     for chunk_size in chunk_sizes() {
         let (client, server) = stream_pair(chunk_size);
         let client = async move {
+            let pipe = client.reader.pipe.clone();
             let download = download::start::<Rpc, _>(client, &b"file".to_vec())
                 .await
                 .unwrap();
@@ -457,7 +458,8 @@ fn download() {
             }
             assert_eq!(body, b"abcdef".to_vec());
             drop(part);
-            reader.complete().await.unwrap();
+            drop(reader);
+            assert_eq!(pipe.borrow().reset, Some(ResetCode::CANCELLED));
         };
         let server = download::handle_download::<(), Rpc, _, _, _, _>(
             (),
@@ -524,7 +526,7 @@ fn upload() {
                 }
                 assert_eq!(body, b"abcdef".to_vec());
                 drop(part);
-                upload.complete().await.unwrap();
+                assert!(upload.next_part().await.unwrap().is_none());
                 responder.respond(b"stored".to_vec()).await.unwrap();
             },
             |_, error| panic!("upload failed: {error:?}"),

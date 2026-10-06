@@ -6,6 +6,8 @@ use ql_common::ResetCode;
 use crate::{codec, read_bytes, ChunkQueue, RpcCodec, RpcError, RpcRead};
 
 /// reads a stream of framed byte parts
+///
+/// dropping the reader stops receiving further parts
 pub struct MultipartReader<H, R>
 where
     H: RpcCodec,
@@ -66,22 +68,6 @@ where
         Err(crate::Error::UnexpectedFrameKind(kind.tag()).into())
     }
 
-    /// rejects any remaining part
-    pub async fn complete(mut self) -> Result<(), RpcError<H::Error, R::Error>> {
-        let Some(frame) = self.read_frame().await? else {
-            return Ok(());
-        };
-
-        let kind = match frame {
-            PartFrame::PartHeader(_) => FrameKind::PartHeader,
-            PartFrame::BodyBytes(_) => FrameKind::BodyChunk,
-            PartFrame::EndPart => FrameKind::EndPart,
-        };
-
-        self.reset_inner(ResetCode::PROTOCOL);
-        Err(crate::Error::UnexpectedFrameKind(kind.tag()).into())
-    }
-
     pub fn reset(mut self, code: ResetCode) {
         self.reset_inner(code);
     }
@@ -114,6 +100,18 @@ where
     fn reset_inner(&mut self, code: ResetCode) {
         self.finished = true;
         self.stream.reset(code);
+    }
+}
+
+impl<H, R> Drop for MultipartReader<H, R>
+where
+    H: RpcCodec,
+    R: RpcRead,
+{
+    fn drop(&mut self) {
+        if !self.finished {
+            self.stream.reset(ResetCode::CANCELLED);
+        }
     }
 }
 
