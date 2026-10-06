@@ -165,6 +165,8 @@ impl StreamMeta for () {
 /// timing and buffering knobs for `QlFsm`
 #[derive(Debug, Clone, Copy)]
 pub struct QlFsmConfig {
+    /// accept IK initiators without a bound peer
+    pub accept_unknown_ik: bool,
     /// overall time limit for one handshake attempt
     pub handshake_timeout: Duration,
     pub session: SessionConfig,
@@ -173,6 +175,7 @@ pub struct QlFsmConfig {
 impl Default for QlFsmConfig {
     fn default() -> Self {
         Self {
+            accept_unknown_ik: false,
             handshake_timeout: Duration::from_secs(5),
             session: SessionConfig::default(),
         }

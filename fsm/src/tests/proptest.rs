@@ -154,6 +154,7 @@ impl Runner {
                 ..SessionConfig::default()
             },
             handshake_timeout: Duration::from_millis(60),
+            ..QlFsmConfig::default()
         };
 
         Self {

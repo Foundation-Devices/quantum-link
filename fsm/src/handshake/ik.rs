@@ -62,7 +62,7 @@ pub fn handle_1<M: StreamMeta>(
     }
 
     let peer = fsm.state.peer.clone();
-    if pattern == IkPattern::Kk && peer.is_none() {
+    if peer.is_none() && (pattern == IkPattern::Kk || !fsm.config.accept_unknown_ik) {
         return Err(ReceiveError::NoPeer);
     }
     if peer.as_ref().is_some_and(|peer| route.sender != peer.qid) {

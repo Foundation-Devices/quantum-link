@@ -301,8 +301,32 @@ fn connect_kk_replaces_in_flight_attempt_and_ignores_stale_reply() {
 }
 
 #[test]
-fn inbound_ik1_auto_binds_unbound_responder() {
-    let mut harness = Harness::paired(QlFsmConfig::default(), true, false);
+fn inbound_ik1_rejects_unknown_peer_by_default() {
+    for armed in [false, true] {
+        let mut harness = Harness::paired(QlFsmConfig::default(), true, false);
+        if armed {
+            harness.b.fsm.arm_pairing(pairing_token(9));
+        }
+
+        harness.connect_ik(Side::A).unwrap();
+        let ik1 = harness.next_outbound(Side::A).unwrap();
+        let time = harness.time();
+        let Node { fsm, crypto } = &mut harness.b;
+        assert_eq!(fsm.receive(time, ik1, crypto), Err(ReceiveError::NoPeer));
+        assert!(harness.b.fsm.peer().is_none());
+        assert!(matches!(harness.b.fsm.state.link, LinkState::Idle));
+        assert!(harness.drain_events(Side::B).is_empty());
+        assert!(harness.next_outbound(Side::B).is_none());
+    }
+}
+
+#[test]
+fn inbound_ik1_auto_binds_unbound_responder_when_enabled() {
+    let config = QlFsmConfig {
+        accept_unknown_ik: true,
+        ..QlFsmConfig::default()
+    };
+    let mut harness = Harness::paired(config, true, false);
 
     harness.connect_ik(Side::A).unwrap();
     harness.pump();

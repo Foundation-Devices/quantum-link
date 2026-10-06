@@ -623,6 +623,7 @@ fn default_runtime_config() -> RuntimeConfig {
                 ..SessionConfig::default()
             },
             handshake_timeout: Duration::from_millis(300),
+            ..QlFsmConfig::default()
         },
         ..Default::default()
     }
