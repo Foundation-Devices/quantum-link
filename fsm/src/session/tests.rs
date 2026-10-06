@@ -976,7 +976,7 @@ fn one_sided_remote_reset_notifies_metadata_and_preserves_stream() {
 }
 
 #[test]
-fn draining_the_last_bytes_reaps_a_terminal_stream_on_drop() {
+fn draining_the_last_bytes_reaps_a_terminal_stream_on_next_poll() {
     let now = Instant::now();
     let mut fsm =
         super::SessionFsm::<TestMeta>::new(SessionConfig::default(), SessionParams::default(), now);
@@ -1010,6 +1010,8 @@ fn draining_the_last_bytes_reaps_a_terminal_stream_on_drop() {
     }
     drop(stream);
 
+    assert!(fsm.state.streams.contains_key(&stream_id));
+    fsm.take_next_write(now);
     assert!(fsm.stream(stream_id).is_err());
 }
 

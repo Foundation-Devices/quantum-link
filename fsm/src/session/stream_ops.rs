@@ -1,51 +1,38 @@
 use ql_common::{ResetCode, StreamId};
 use ql_wire::StreamReset;
 
-use super::{
-    state::{InboundState, OutboundState, StreamIoState, StreamState},
-    SessionFsm,
-};
+use super::state::{InboundState, OutboundState, StreamIoState, StreamState};
 use crate::{CommitReadError, ResetOrigin, StreamMeta, StreamResetEvent, StreamResetTarget};
 
+/// mutable access to one stream
+/// terminal streams are reaped when the session is next polled
 pub struct StreamOps<'a, M: StreamMeta> {
-    session: &'a mut SessionFsm<M>,
     stream_id: StreamId,
-    stream_index: usize,
+    stream: &'a mut StreamState<M>,
 }
 
 impl<'a, M: StreamMeta> StreamOps<'a, M> {
-    pub(super) fn new(
-        session: &'a mut SessionFsm<M>,
-        stream_id: StreamId,
-        stream_index: usize,
-    ) -> Self {
-        Self {
-            session,
-            stream_id,
-            stream_index,
-        }
+    pub(super) fn new(stream_id: StreamId, stream: &'a mut StreamState<M>) -> Self {
+        Self { stream_id, stream }
     }
 
     pub fn metadata(&self) -> &M {
-        &self.stream().metadata
+        &self.stream.metadata
     }
 
     pub fn metadata_mut(&mut self) -> &mut M {
-        &mut self.stream_mut().metadata
+        &mut self.stream.metadata
     }
 
     pub fn io(&mut self) -> StreamIo<'_> {
-        let stream_id = self.stream_id;
-        StreamIo::new(stream_id, &mut self.stream_mut().io)
+        StreamIo::new(self.stream_id, &mut self.stream.io)
     }
 
     /// returns the metadata and stream I/O together
     pub fn split_mut(&mut self) -> (&mut M, StreamIo<'_>) {
-        let stream_id = self.stream_id;
-        let stream = self.stream_mut();
         (
-            &mut stream.metadata,
-            StreamIo::new(stream_id, &mut stream.io),
+            &mut self.stream.metadata,
+            StreamIo::new(self.stream_id, &mut self.stream.io),
         )
     }
 
@@ -64,7 +51,7 @@ impl<'a, M: StreamMeta> StreamOps<'a, M> {
     /// resets the stream and notifies its metadata
     pub fn reset(&mut self, target: StreamResetTarget, code: ResetCode) {
         let stream_id = self.stream_id;
-        let StreamState { metadata, io } = self.stream_mut();
+        let StreamState { metadata, io } = &mut *self.stream;
         let wire_target = match target {
             StreamResetTarget::Reader => io.role.inbound_target(),
             StreamResetTarget::Writer => io.role.outbound_target(),
@@ -90,22 +77,6 @@ impl<'a, M: StreamMeta> StreamOps<'a, M> {
             target,
             origin: ResetOrigin::Local,
         });
-    }
-
-    #[inline]
-    fn stream(&self) -> &StreamState<M> {
-        &self.session.state.streams[self.stream_index]
-    }
-
-    #[inline]
-    fn stream_mut(&mut self) -> &mut StreamState<M> {
-        &mut self.session.state.streams[self.stream_index]
-    }
-}
-
-impl<M: StreamMeta> Drop for StreamOps<'_, M> {
-    fn drop(&mut self) {
-        self.session.try_reap_stream(self.stream_id);
     }
 }
 

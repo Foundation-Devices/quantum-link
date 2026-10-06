@@ -216,20 +216,31 @@ impl<M: StreamMeta> SessionFsm<M> {
             ),
         );
         let stream_index = self.state.streams.len() - 1;
-        Ok(StreamOps::new(self, stream_id, stream_index))
+        Ok(StreamOps::new(
+            stream_id,
+            self.state.streams.get_index_mut(stream_index).unwrap().1,
+        ))
     }
 
     pub fn stream(&mut self, stream_id: StreamId) -> Result<StreamOps<'_, M>, StreamError> {
-        let Some(stream_index) = (|| {
-            let index = self.state.streams.get_index_of(&stream_id)?;
-            // Event::Opened only fires after we receive the first frame of a stream
-            // prevent early access to streams
-            let _ = self.state.streams[index].io.header.as_ref()?;
-            Some(index)
-        })() else {
-            return Err(StreamError::MissingStream);
-        };
-        Ok(StreamOps::new(self, stream_id, stream_index))
+        // unopened remote streams are not available yet
+        let stream = self
+            .state
+            .streams
+            .get_mut(&stream_id)
+            .filter(|stream| stream.io.header.is_some())
+            .ok_or(StreamError::MissingStream)?;
+        Ok(StreamOps::new(stream_id, stream))
+    }
+
+    pub fn streams(&mut self) -> impl Iterator<Item = StreamOps<'_, M>> {
+        self.state
+            .streams
+            .iter_mut()
+            .filter_map(|(&stream_id, stream)| {
+                stream.io.header.as_ref()?;
+                Some(StreamOps::new(stream_id, stream))
+            })
     }
 
     pub fn queue_ping(&mut self) {

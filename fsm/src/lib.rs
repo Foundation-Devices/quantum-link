@@ -342,6 +342,15 @@ impl<M: StreamMeta> QlFsm<M> {
         fsm::stream(self, stream_id)
     }
 
+    /// returns the open streams
+    pub fn streams(&mut self) -> impl Iterator<Item = StreamOps<'_, M>> {
+        self.state
+            .link
+            .connected_mut()
+            .into_iter()
+            .flat_map(|connection| connection.session.streams())
+    }
+
     /// queues a ping on the active session
     pub fn queue_ping(&mut self) -> Result<(), NoSessionError> {
         fsm::queue_ping(self)
