@@ -54,31 +54,40 @@ impl std::error::Error for ReceiveError {}
 
 /// two records are stored at a time to support out of order packets between adjacent records
 #[derive(Debug)]
-pub struct Dechunker {
-    records: [Option<Record>; 2],
+pub struct Dechunker<B = Vec<u8>> {
+    records: [Option<Record<B>>; 2],
     inactivity_timeout: Duration,
 }
 
+pub trait Buffer: AsMut<[u8]> {
+    /// allocates a buffer with exactly the requested length
+    fn allocate(len: usize) -> Self;
+}
+
 #[derive(Debug)]
-struct Record {
+struct Record<B> {
     sequence: u16,
     record_len: usize,
     last_received: Instant,
     // one bit per chunk, set after that chunk is copied into data
     received: Vec<u64>,
     received_count: usize,
-    data: Vec<u8>,
+    data: B,
 }
 
-impl Dechunker {
-    pub fn new(inactivity_timeout: Duration) -> Self {
+impl<B: Buffer> Dechunker<B> {
+    pub fn new() -> Self {
         Self {
             records: [None, None],
-            inactivity_timeout,
+            inactivity_timeout: Duration::from_secs(5),
         }
     }
 
-    pub fn receive(&mut self, data: &[u8]) -> Result<Option<Vec<u8>>, ReceiveError> {
+    pub fn set_inactivity_timeout(&mut self, timeout: Duration) {
+        self.inactivity_timeout = timeout;
+    }
+
+    pub fn receive(&mut self, data: &[u8]) -> Result<Option<B>, ReceiveError> {
         if data.len() < HEADER_SIZE {
             return Err(ReceiveError::HeaderTooSmall);
         }
@@ -169,7 +178,7 @@ impl Dechunker {
             last_received: now,
             received: vec![0; total_chunks.div_ceil(u64::BITS as usize)],
             received_count: 0,
-            data: vec![0; record_len],
+            data: B::allocate(record_len),
         });
 
         let index = header.index as usize;
@@ -178,7 +187,7 @@ impl Dechunker {
         let bit = 1 << (index % u64::BITS as usize);
         if record.received[word] & bit == 0 {
             let start = index * CHUNK_DATA_SIZE;
-            record.data[start..start + len].copy_from_slice(&payload[..len]);
+            record.data.as_mut()[start..start + len].copy_from_slice(&payload[..len]);
             record.received[word] |= bit;
             record.received_count += 1;
         }
@@ -191,8 +200,14 @@ impl Dechunker {
     }
 }
 
-impl Default for Dechunker {
+impl<B: Buffer> Default for Dechunker<B> {
     fn default() -> Self {
-        Self::new(Duration::from_secs(5))
+        Self::new()
+    }
+}
+
+impl Buffer for Vec<u8> {
+    fn allocate(len: usize) -> Self {
+        vec![0; len]
     }
 }

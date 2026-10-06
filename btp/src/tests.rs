@@ -12,7 +12,7 @@ fn packet_version_uses_v1_padding_byte() {
     chunk[7] = 0;
     assert_eq!(packet_version(&chunk), Some(Version::V1));
     assert!(matches!(
-        Dechunker::default().receive(&chunk),
+        Dechunker::<Vec<u8>>::default().receive(&chunk),
         Err(ReceiveError::UnsupportedVersion { tag: 0 })
     ));
 }
@@ -55,7 +55,8 @@ fn inactive_records_do_not_block_a_restarted_sender() {
     let second_old = chunk_with_sequence(&old, 20_001).next().unwrap();
     let new = [1];
     let new_chunk = chunk_with_sequence(&new, 0).next().unwrap();
-    let mut dechunker = Dechunker::new(inactivity_timeout);
+    let mut dechunker = Dechunker::new();
+    dechunker.set_inactivity_timeout(inactivity_timeout);
 
     dechunker.receive(&first_old).unwrap();
     dechunker.receive(&second_old).unwrap();
@@ -73,7 +74,7 @@ fn rejects_truncated_chunk() {
     let chunk = chunk_with_sequence(&[0; CHUNK_DATA_SIZE], 0)
         .next()
         .unwrap();
-    let mut dechunker = Dechunker::default();
+    let mut dechunker = Dechunker::<Vec<u8>>::default();
     assert!(matches!(
         dechunker.receive(&chunk[..chunk.len() - 1]),
         Err(ReceiveError::ChunkTooSmall { .. })
