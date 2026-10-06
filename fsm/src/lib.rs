@@ -265,12 +265,15 @@ impl<M: StreamMeta> QlFsm<M> {
     }
 
     /// handles one inbound wire message
-    pub fn receive(
+    pub fn receive<B>(
         &mut self,
         now: Instant,
-        bytes: Vec<u8>,
+        bytes: B,
         crypto: &impl QlCrypto,
-    ) -> Result<(), ReceiveError> {
+    ) -> Result<(), ReceiveError>
+    where
+        B: AsMut<[u8]> + Into<Bytes>,
+    {
         self.state.now = now;
         fsm::receive(self, bytes, crypto)
     }

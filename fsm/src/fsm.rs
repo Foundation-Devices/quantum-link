@@ -91,12 +91,15 @@ pub fn handle_connect_kk<M: StreamMeta>(
     handshake::handle_connect_kk(fsm, crypto)
 }
 
-pub fn receive<M: StreamMeta>(
+pub fn receive<M: StreamMeta, B>(
     fsm: &mut QlFsm<M>,
-    mut bytes: Vec<u8>,
+    mut bytes: B,
     crypto: &impl QlCrypto,
-) -> Result<(), ReceiveError> {
-    let mut reader = Reader::new(bytes.as_mut_slice());
+) -> Result<(), ReceiveError>
+where
+    B: AsMut<[u8]> + Into<Bytes>,
+{
+    let mut reader = Reader::new(bytes.as_mut());
     let header = wire::RecordHeader::decode(&mut reader)
         .map_err(|error| ReceiveError::wire(ReceiveStage::RecordHeader, error))?;
 
@@ -137,8 +140,8 @@ pub fn receive<M: StreamMeta>(
                     (payload.len(), record.header.seq)
                 };
 
-                let len = bytes.len();
-                let plaintext = Bytes::from(bytes).slice(len - decrypt_len..);
+                let bytes: Bytes = bytes.into();
+                let plaintext = bytes.slice(bytes.len() - decrypt_len..);
                 let frames = wire::parse_session_frames(plaintext);
 
                 let mut emit = EventSink::new(events);
