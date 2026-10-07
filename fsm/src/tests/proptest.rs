@@ -626,7 +626,7 @@ fn reject_taken(harness: &mut Harness, side: Side, write: &TakenWrite) {
 fn deliver_to(harness: &mut Harness, side: Side, record: Vec<u8>) -> Result<(), ReceiveError> {
     let time = harness.time();
     let Node { fsm, crypto } = harness.node_mut(side);
-    fsm.receive(time, record, crypto)
+    fsm.receive(time, record, crypto).map(|_| ())
 }
 
 fn take_pending(pending: &mut Vec<Vec<u8>>, index: usize) -> Option<Vec<u8>> {

@@ -78,7 +78,7 @@ pub fn handle_handshake_record<M: StreamMeta>(
     crypto: &impl QlCrypto,
     route: RouteHeader,
     record: &QlHandshakeRecord,
-) -> Result<(), ReceiveError> {
+) -> Result<bool, ReceiveError> {
     match record {
         QlHandshakeRecord::Ik1(message) => ik::handle_1(fsm, crypto, route, message, IkPattern::Ik),
         QlHandshakeRecord::Ik2(message) => ik::handle_2(fsm, crypto, route, message, IkPattern::Ik),

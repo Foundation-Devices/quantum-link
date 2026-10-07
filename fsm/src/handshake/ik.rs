@@ -56,9 +56,9 @@ pub fn handle_1<M: StreamMeta>(
     route: RouteHeader,
     message: &Ik1,
     pattern: IkPattern,
-) -> Result<(), ReceiveError> {
+) -> Result<bool, ReceiveError> {
     if should_ignore_inbound(fsm, route, message, pattern) {
-        return Ok(());
+        return Ok(false);
     }
 
     let peer = fsm.state.peer.clone();
@@ -112,7 +112,7 @@ pub fn handle_1<M: StreamMeta>(
         },
         record,
     );
-    Ok(())
+    Ok(true)
 }
 
 pub fn handle_2<M: StreamMeta>(
@@ -121,14 +121,14 @@ pub fn handle_2<M: StreamMeta>(
     route: RouteHeader,
     message: &Ik2,
     pattern: IkPattern,
-) -> Result<(), ReceiveError> {
+) -> Result<bool, ReceiveError> {
     let LinkState::IkInitiator(state) = &mut fsm.state.link else {
-        return Ok(());
+        return Ok(false);
     };
     if state.handshake.pattern() != pattern
         || state.handshake.handshake_id() != Some(message.handshake_id)
     {
-        return Ok(());
+        return Ok(false);
     }
     state
         .handshake
@@ -145,7 +145,8 @@ pub fn handle_2<M: StreamMeta>(
             .handshake
             .finalize(crypto)
             .map_err(|source| wire_error(pattern, source))?,
-    )
+    )?;
+    Ok(true)
 }
 
 fn should_ignore_inbound<M: StreamMeta>(

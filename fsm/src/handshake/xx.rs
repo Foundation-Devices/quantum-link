@@ -44,9 +44,9 @@ pub fn handle_xx1<M: StreamMeta>(
     crypto: &impl QlCrypto,
     route: RouteHeader,
     message: &Xx1,
-) -> Result<(), ReceiveError> {
+) -> Result<bool, ReceiveError> {
     if should_ignore_inbound(fsm, crypto, route, message) {
-        return Ok(());
+        return Ok(false);
     }
     match fsm.state.armed_pairing_token {
         Some(expected) if expected.id(crypto) != message.pairing_id => {
@@ -81,7 +81,7 @@ pub fn handle_xx1<M: StreamMeta>(
                 },
                 QlHandshakeRecord::Xx2(outbound),
             );
-            Ok(())
+            Ok(true)
         }
         None => Err(ReceiveError::NotPairingMode),
     }
@@ -92,14 +92,14 @@ pub fn handle_xx2<M: StreamMeta>(
     crypto: &impl QlCrypto,
     route: RouteHeader,
     message: &Xx2,
-) -> Result<(), ReceiveError> {
+) -> Result<bool, ReceiveError> {
     {
         let LinkState::XxInitiator(state) = &mut fsm.state.link else {
-            return Ok(());
+            return Ok(false);
         };
 
         if state.handshake.handshake_id() != Some(message.handshake_id) {
-            return Ok(());
+            return Ok(false);
         }
 
         state
@@ -121,7 +121,7 @@ pub fn handle_xx2<M: StreamMeta>(
         );
     }
 
-    Ok(())
+    Ok(true)
 }
 
 pub fn handle_xx3<M: StreamMeta>(
@@ -129,13 +129,13 @@ pub fn handle_xx3<M: StreamMeta>(
     crypto: &impl QlCrypto,
     route: RouteHeader,
     message: &Xx3,
-) -> Result<(), ReceiveError> {
+) -> Result<bool, ReceiveError> {
     let LinkState::XxResponder(state) = &mut fsm.state.link else {
-        return Ok(());
+        return Ok(false);
     };
 
     if state.handshake.handshake_id() != Some(message.handshake_id) {
-        return Ok(());
+        return Ok(false);
     }
 
     state
@@ -162,7 +162,8 @@ pub fn handle_xx3<M: StreamMeta>(
         fsm,
         message.handshake_id,
         state.handshake.finalize(crypto).map_err(wire_error)?,
-    )
+    )?;
+    Ok(true)
 }
 
 pub fn handle_xx4<M: StreamMeta>(
@@ -170,14 +171,14 @@ pub fn handle_xx4<M: StreamMeta>(
     crypto: &impl QlCrypto,
     route: RouteHeader,
     message: &Xx4,
-) -> Result<(), ReceiveError> {
+) -> Result<bool, ReceiveError> {
     {
         let LinkState::XxInitiator(state) = &mut fsm.state.link else {
-            return Ok(());
+            return Ok(false);
         };
 
         if state.handshake.handshake_id() != Some(message.handshake_id) {
-            return Ok(());
+            return Ok(false);
         }
 
         state
@@ -193,7 +194,8 @@ pub fn handle_xx4<M: StreamMeta>(
         fsm,
         message.handshake_id,
         state.handshake.finalize(crypto).map_err(wire_error)?,
-    )
+    )?;
+    Ok(true)
 }
 
 pub fn disarm_pairing<M: StreamMeta>(fsm: &mut QlFsm<M>) {

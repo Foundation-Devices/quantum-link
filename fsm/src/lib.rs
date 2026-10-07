@@ -267,13 +267,13 @@ impl<M: StreamMeta> QlFsm<M> {
         fsm::handle_connect_kk(self, crypto)
     }
 
-    /// handles one inbound wire message
+    /// handles one inbound wire message and returns whether it was processed rather than ignored
     pub fn receive<B>(
         &mut self,
         now: Instant,
         bytes: B,
         crypto: &impl QlCrypto,
-    ) -> Result<(), ReceiveError>
+    ) -> Result<bool, ReceiveError>
     where
         B: AsMut<[u8]> + Into<Bytes>,
     {

@@ -95,7 +95,7 @@ pub fn receive<M: StreamMeta, B>(
     fsm: &mut QlFsm<M>,
     mut bytes: B,
     crypto: &impl QlCrypto,
-) -> Result<(), ReceiveError>
+) -> Result<bool, ReceiveError>
 where
     B: AsMut<[u8]> + Into<Bytes>,
 {
@@ -127,7 +127,7 @@ where
                     let record = wire::QlSessionRecord::decode(&mut reader)
                         .map_err(|error| ReceiveError::wire(ReceiveStage::SessionRecord, error))?;
                     if conn.session.is_replay(record.header.seq) {
-                        return Ok(());
+                        return Ok(false);
                     }
                     let payload = wire::decrypt_record(
                         crypto,
@@ -150,7 +150,7 @@ where
             };
 
             finish_termination(fsm, event, crypto);
-            Ok(())
+            Ok(true)
         }
     }
 }
