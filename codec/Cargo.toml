@@ -7,3 +7,7 @@ license.workspace = true
 
 [dependencies]
 bytes = { workspace = true }
+ql-codec-macro = { workspace = true, optional = true }
+
+[features]
+derive = ["dep:ql-codec-macro"]

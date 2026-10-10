@@ -1,10 +1,9 @@
-ql_codec::codec! {
-    /// Session parameters advertised in the handshake
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct TransportParams {
-        /// Initial per-stream receive credit granted to the remote peer
-        pub initial_stream_receive_window: u32,
-    }
+/// Session parameters advertised in the handshake
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ql_codec::Codec)]
+#[codec(frozen)]
+pub struct TransportParams {
+    /// Initial per-stream receive credit granted to the remote peer
+    pub initial_stream_receive_window: u32,
 }
 
 impl Default for TransportParams {

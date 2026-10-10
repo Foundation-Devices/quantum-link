@@ -4,8 +4,8 @@ use bytes::Bytes;
 use ql_codec::Varint;
 use ql_common::{ResetCode, StreamId, QID};
 use ql_wire::{
-    decode_session_frames, parse_session_frames, RecordAck, RecordSeq, ResetTarget, SessionFrame,
-    SessionRecordBuilder, StreamData, StreamOpen, StreamReset,
+    decode_session_frames, RecordAck, RecordSeq, ResetTarget, SessionFrame, SessionRecordBuilder,
+    StreamData, StreamOpen, StreamReset,
 };
 
 use super::{
@@ -100,7 +100,7 @@ fn read_stream_all(fsm: &mut super::SessionFsm<()>, stream_id: StreamId) -> Vec<
 fn next_outbound<M: StreamMeta>(
     fsm: &mut super::SessionFsm<M>,
     now: Instant,
-) -> Option<(RecordSeq, Vec<SessionFrame<Vec<u8>>>)> {
+) -> Option<(RecordSeq, Vec<SessionFrame>)> {
     let (write_id, builder) = fsm.take_next_write(now)?;
     if let Some(write_id) = write_id {
         fsm.complete_write(now, write_id, true);
@@ -115,7 +115,7 @@ fn drain_outbound(
     fsm: &mut super::SessionFsm<()>,
     now: Instant,
     limit: usize,
-) -> Vec<(RecordSeq, Vec<SessionFrame<Vec<u8>>>)> {
+) -> Vec<(RecordSeq, Vec<SessionFrame>)> {
     let mut records = Vec::new();
     for _ in 0..limit {
         let Some(record) = next_outbound(fsm, now) else {
@@ -131,17 +131,16 @@ fn receive_events<M: StreamMeta>(
     fsm: &mut super::SessionFsm<M>,
     now: Instant,
     seq: RecordSeq,
-    record: &[SessionFrame<Vec<u8>>],
+    record: &[SessionFrame],
 ) -> Vec<SessionEvent> {
     let mut builder = SessionRecordBuilder::new(seq, usize::MAX);
     for frame in record {
         assert!(builder.push_frame(frame));
     }
     let bytes = Bytes::from(builder.bytes().to_vec());
-    let frames = parse_session_frames(bytes);
     let mut events = Vec::new();
     let mut emit = |event| events.push(event);
-    fsm.receive(now, seq, frames, &mut emit);
+    fsm.receive(now, seq, &bytes, &mut emit);
     events
 }
 
@@ -245,14 +244,13 @@ fn retransmitted_record_ack_releases_stream_data() {
     let (retried_seq, _) = next_outbound(&mut fsm, now + Duration::from_millis(21)).unwrap();
     assert_ne!(first_seq, retried_seq);
 
-    let mut events = Vec::new();
-    fsm.receive(
+    let events = receive_events(
+        &mut fsm,
         now + Duration::from_millis(22),
         RecordSeq(9),
-        std::iter::once(Ok(SessionFrame::Ack(
+        &[SessionFrame::Ack(
             RecordAck::from_ranges([retried_seq..=retried_seq]).unwrap(),
-        ))),
-        &mut |event| events.push(event),
+        )],
     );
 
     assert!(events.is_empty());
@@ -274,13 +272,13 @@ fn acknowledged_rtt_updates_retransmit_timeout() {
 
     assert_eq!(write_stream_bytes(&mut fsm, stream_id, b"first"), 5);
     let (first_seq, _) = next_outbound(&mut fsm, now).unwrap();
-    fsm.receive(
+    receive_events(
+        &mut fsm,
         now + Duration::from_millis(80),
         RecordSeq(9),
-        std::iter::once(Ok(SessionFrame::Ack(
+        &[SessionFrame::Ack(
             RecordAck::from_ranges([first_seq..=first_seq]).unwrap(),
-        ))),
-        &mut |_| {},
+        )],
     );
 
     assert_eq!(write_stream_bytes(&mut fsm, stream_id, b"second"), 6);
@@ -428,18 +426,15 @@ fn ack_reopens_write_capacity() {
     let mut stream = fsm.stream(stream_id).unwrap();
     assert_eq!(stream.io().writer().active().unwrap().write(&mut bytes), 4);
     stream.metadata_mut().pending_write = Bytes::from_static(b"z");
-    drop(stream);
     let (record_seq, _record) = next_outbound(&mut fsm, now).unwrap();
 
-    let mut events = Vec::new();
-    let mut emit = |event| events.push(event);
-    fsm.receive(
+    let events = receive_events(
+        &mut fsm,
         now + Duration::from_millis(1),
         RecordSeq(9),
-        std::iter::once(Ok(SessionFrame::Ack(
+        &[SessionFrame::Ack(
             RecordAck::from_ranges([record_seq..=record_seq]).unwrap(),
-        ))),
-        &mut emit,
+        )],
     );
 
     assert!(events.is_empty());
@@ -464,7 +459,6 @@ fn ack_of_fin_notifies_metadata_once() {
     let mut stream = fsm.stream(stream_id).unwrap();
     assert_eq!(stream.io().writer().active().unwrap().write(&mut bytes), 4);
     stream.io().writer().active().unwrap().finish();
-    drop(stream);
 
     let (record_seq, record) = next_outbound(&mut fsm, now).unwrap();
     assert!(matches!(
@@ -476,32 +470,25 @@ fn ack_of_fin_notifies_metadata_once() {
         })] if *id == stream_id
     ));
 
-    let mut events = Vec::new();
-    {
-        let mut emit = |event| events.push(event);
-        fsm.receive(
-            now + Duration::from_millis(1),
-            RecordSeq(9),
-            std::iter::once(Ok(SessionFrame::Ack(
-                RecordAck::from_ranges([record_seq..=record_seq]).unwrap(),
-            ))),
-            &mut emit,
-        );
-    }
+    let events = receive_events(
+        &mut fsm,
+        now + Duration::from_millis(1),
+        RecordSeq(9),
+        &[SessionFrame::Ack(
+            RecordAck::from_ranges([record_seq..=record_seq]).unwrap(),
+        )],
+    );
     assert!(events.is_empty());
     assert_eq!(fsm.state.streams[&stream_id].metadata.outbound_finished, 1);
 
-    {
-        let mut emit = |event| events.push(event);
-        fsm.receive(
-            now + Duration::from_millis(2),
-            RecordSeq(10),
-            std::iter::once(Ok(SessionFrame::Ack(
-                RecordAck::from_ranges([record_seq..=record_seq]).unwrap(),
-            ))),
-            &mut emit,
-        );
-    }
+    let events = receive_events(
+        &mut fsm,
+        now + Duration::from_millis(2),
+        RecordSeq(10),
+        &[SessionFrame::Ack(
+            RecordAck::from_ranges([record_seq..=record_seq]).unwrap(),
+        )],
+    );
     assert!(events.is_empty());
     assert_eq!(fsm.state.streams[&stream_id].metadata.outbound_finished, 1);
 }
@@ -692,7 +679,6 @@ fn inbound_stream_data_queues_opened_and_notifies_metadata() {
         assert_eq!(bytes, b"hello");
         reader.commit_read(bytes.len()).unwrap();
     }
-    drop(stream);
     let mut stream = fsm.stream(stream_id).unwrap();
     assert_eq!(stream.metadata().inbound_finished, 1);
     assert!(stream.io().reader().active().is_none());
@@ -1008,7 +994,6 @@ fn draining_the_last_bytes_reaps_a_terminal_stream_on_next_poll() {
         assert_eq!(bytes, b"hello");
         reader.commit_read(bytes.len()).unwrap();
     }
-    drop(stream);
 
     assert!(fsm.state.streams.contains_key(&stream_id));
     fsm.take_next_write(now);

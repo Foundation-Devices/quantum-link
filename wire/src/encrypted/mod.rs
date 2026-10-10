@@ -1,4 +1,4 @@
-use ql_codec::{ByteSlice, Reader};
+use ql_codec::Reader;
 use ql_common::StreamId;
 
 use crate::{
@@ -19,59 +19,45 @@ pub use stream_data::*;
 pub use stream_reset::*;
 pub use stream_window::*;
 
-ql_codec::codec! {
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub enum SessionFrame<B> as SessionFrameKind {
-        // todo: do we need ping as explicit frame?
-        Ping = 1,
-        Ack(RecordAck) = 2,
-        StreamData(StreamData<B>) = 3,
-        StreamWindow(StreamWindow) = 4,
-        StreamReset(StreamReset) = 5,
-        Close(SessionClose) = 6,
-        Unpair = 7,
-    }
+#[derive(Debug, Clone, PartialEq, Eq, ql_codec::Codec)]
+#[codec(frozen, discriminants = SessionFrameKind)]
+#[repr(u8)]
+pub enum SessionFrame {
+    // todo: do we need ping as explicit frame?
+    Ping = 1,
+    Ack(RecordAck) = 2,
+    StreamData(StreamData<Vec<u8>>) = 3,
+    StreamWindow(StreamWindow) = 4,
+    StreamReset(StreamReset) = 5,
+    Close(SessionClose) = 6,
+    Unpair = 7,
 }
 
-impl<B: ByteSlice> SessionFrame<B> {
-    pub fn into_owned(self) -> SessionFrame<Vec<u8>> {
-        match self {
-            Self::Ping => SessionFrame::Ping,
-            Self::Unpair => SessionFrame::Unpair,
-            Self::Ack(frame) => SessionFrame::Ack(frame),
-            Self::StreamData(frame) => SessionFrame::StreamData(frame.into_owned()),
-            Self::StreamWindow(frame) => SessionFrame::StreamWindow(frame),
-            Self::StreamReset(frame) => SessionFrame::StreamReset(frame),
-            Self::Close(frame) => SessionFrame::Close(frame),
-        }
-    }
-}
-
-pub fn parse_session_frames<B: ByteSlice>(bytes: B) -> SessionFrameIter<B> {
+pub fn parse_session_frames(bytes: &[u8]) -> SessionFrameIter<'_> {
     SessionFrameIter {
         reader: Reader::new(bytes),
     }
 }
 
-pub fn decode_session_frames(bytes: &[u8]) -> Result<Vec<SessionFrame<Vec<u8>>>, Error> {
+pub fn decode_session_frames(bytes: &[u8]) -> Result<Vec<SessionFrame>, Error> {
     parse_session_frames(bytes)
-        .map(|frame| frame.map(SessionFrame::into_owned))
+        .map(|frame| frame.map(SessionFrameRef::into_owned))
         .collect()
 }
 
 #[derive(Clone)]
-pub struct SessionFrameIter<B> {
-    reader: Reader<B>,
+pub struct SessionFrameIter<'a> {
+    reader: Reader<'a>,
 }
 
-impl<B: ByteSlice> Iterator for SessionFrameIter<B> {
-    type Item = Result<SessionFrame<B>, Error>;
+impl<'a> Iterator for SessionFrameIter<'a> {
+    type Item = Result<SessionFrameRef<'a>, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.reader.is_empty() {
             None
         } else {
-            Some(self.reader.decode::<SessionFrame<B>>().map_err(Into::into))
+            Some(self.reader.decode_ref::<SessionFrame>().map_err(Into::into))
         }
     }
 }

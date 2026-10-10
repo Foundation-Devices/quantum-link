@@ -21,7 +21,7 @@ use indexmap::IndexMap;
 use ql_codec::Varint;
 use ql_common::StreamId;
 use ql_wire::{
-    RecordAck, RecordSeq, ResetTarget, SessionClose, SessionCloseCode, SessionFrame,
+    RecordAck, RecordSeq, ResetTarget, SessionClose, SessionCloseCode, SessionFrameRef,
     SessionRecordBuilder, StreamData, StreamOpen, StreamReset, StreamWindow,
 };
 
@@ -264,10 +264,13 @@ impl<M: StreamMeta> SessionFsm<M> {
         self.state.replay_window.is_replay(seq)
     }
 
-    pub fn receive<I>(&mut self, now: Instant, seq: RecordSeq, frames: I, sink: &mut impl EventSink)
-    where
-        I: IntoIterator<Item = Result<SessionFrame<Bytes>, ql_wire::Error>>,
-    {
+    pub fn receive(
+        &mut self,
+        now: Instant,
+        seq: RecordSeq,
+        plaintext: &Bytes,
+        sink: &mut impl EventSink,
+    ) {
         self.collect_timeouts(now);
 
         self.state.replay_window.accept(seq);
@@ -278,33 +281,40 @@ impl<M: StreamMeta> SessionFsm<M> {
 
         let mut ack_eliciting = false;
 
-        for frame in frames {
+        for frame in ql_wire::parse_session_frames(plaintext) {
             let Ok(frame) = frame else {
                 self.close(SessionCloseCode::PROTOCOL, sink);
                 return;
             };
-            ack_eliciting |= !matches!(frame, SessionFrame::Ack(_));
+            ack_eliciting |= !matches!(frame, SessionFrameRef::Ack(_));
             match frame {
-                SessionFrame::Ping => {}
-                SessionFrame::Unpair => {
+                SessionFrameRef::Ping => {}
+                SessionFrameRef::Unpair => {
                     self.unpair(sink);
                     return;
                 }
-                SessionFrame::Ack(ack) => self.process_record_ack(now, &ack),
-                SessionFrame::StreamData(frame) => {
+                SessionFrameRef::Ack(ack) => self.process_record_ack(now, &ack),
+                SessionFrameRef::StreamData(frame) => {
+                    // XXX: The decoder only lends `&[u8]`, but the stream keeps its data, so
+                    // `slice_ref` finds the frame's bytes in `plaintext` by their address. That
+                    // only works because the frames were decoded from `plaintext`, and panics
+                    // otherwise.
+                    let frame = frame.map_bytes(|bytes| plaintext.slice_ref(bytes));
                     if self.handle_stream_data(frame, sink).is_err() {
                         self.close(SessionCloseCode::PROTOCOL, sink);
                         return;
                     }
                 }
-                SessionFrame::StreamWindow(frame) => self.handle_stream_window(&frame),
-                SessionFrame::StreamReset(frame) => {
-                    if self.handle_stream_reset(&frame).is_err() {
+                SessionFrameRef::StreamWindow(frame) => {
+                    self.handle_stream_window(&frame.into_owned());
+                }
+                SessionFrameRef::StreamReset(frame) => {
+                    if self.handle_stream_reset(&frame.into_owned()).is_err() {
                         self.close(SessionCloseCode::PROTOCOL, sink);
                         return;
                     }
                 }
-                SessionFrame::Close(close) => {
+                SessionFrameRef::Close(close) => {
                     self.close(close.code, sink);
                     return;
                 }

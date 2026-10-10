@@ -48,7 +48,7 @@ struct DecodedSessionWrite {
     record: Vec<u8>,
     write_id: Option<WriteId>,
     header: ql_wire::SessionHeader,
-    frames: Vec<ql_wire::SessionFrame<Vec<u8>>>,
+    frames: Vec<ql_wire::SessionFrame>,
 }
 
 impl Harness {
@@ -334,9 +334,9 @@ fn decrypt_record(
     crypto: &impl QlCrypto,
     record: &[u8],
     session_key: &SessionKey,
-) -> (ql_wire::SessionHeader, Vec<ql_wire::SessionFrame<Vec<u8>>>) {
+) -> (ql_wire::SessionHeader, Vec<ql_wire::SessionFrame>) {
     let (header, record) =
-        ql_wire::decode_record::<ql_wire::QlSessionRecord<_>, _>(record).unwrap();
+        ql_wire::decode_record::<ql_wire::QlSessionRecord<Vec<u8>>>(record).unwrap();
     let plaintext = ql_wire::decrypt_record(
         crypto,
         &header,

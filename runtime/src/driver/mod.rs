@@ -292,7 +292,6 @@ impl DriverState {
                     let (reader, writer, reader_io, writer_io) =
                         io::new_stream(stream_id, self.runtime_tx.clone());
                     metadata.initialize(writer_io, reader_io, stream_io);
-                    drop(stream);
 
                     log::info!("delivering inbound stream to platform: stream_id={stream_id}");
                     platform.handle_inbound(

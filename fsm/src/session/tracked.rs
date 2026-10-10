@@ -16,6 +16,7 @@ pub struct TrackedRecord {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::enum_variant_names)]
 pub enum TrackedFrame {
     StreamData(TrackedStreamData),
     StreamReset(StreamReset),

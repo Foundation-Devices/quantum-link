@@ -2,7 +2,7 @@ use core::{fmt, ops::Deref};
 
 use bytes::BufMut;
 
-use crate::{ByteSlice, Decode, Encode, Error, Reader};
+use crate::{DecodeValue, Element, Encode, Error, Reader};
 
 /// An integer field carried as a varint
 ///
@@ -51,11 +51,17 @@ impl<T: Primitive> Encode for Varint<T> {
     }
 }
 
-impl<B: ByteSlice, T: Primitive> Decode<B> for Varint<T> {
-    fn decode(reader: &mut Reader<B>) -> Result<Self, Error> {
+impl<T: Primitive> DecodeValue for Varint<T> {
+    fn decode_value(reader: &mut Reader<'_>) -> Result<Self, Error> {
         self::decode(reader).map(Self)
     }
+
+    fn missing() -> Option<Self> {
+        Some(Self(T::from_u8(0)))
+    }
 }
+
+impl<T> Element for Varint<T> {}
 
 pub fn encoded_len<T: Primitive>(mut value: T) -> usize {
     let mut len = 1;
@@ -78,15 +84,11 @@ where
     out.put_u8(value.low_7_bits());
 }
 
-pub fn decode<T, B>(reader: &mut Reader<B>) -> Result<T, Error>
-where
-    T: Primitive,
-    B: ByteSlice,
-{
+pub fn decode<T: Primitive>(reader: &mut Reader<'_>) -> Result<T, Error> {
     let mut value = T::from_u8(0);
 
     for index in 0..T::MAX_ENCODED_LEN {
-        let byte = reader.decode::<u8>()?;
+        let byte = reader.take_u8()?;
         let payload = byte & 0x7f;
 
         value = value
@@ -170,7 +172,7 @@ mod tests {
         T: Primitive + Debug + PartialEq,
     {
         let mut reader = Reader::new(bytes);
-        assert_eq!(decode::<T, _>(&mut reader), Err(error));
+        assert_eq!(decode::<T>(&mut reader), Err(error));
     }
 
     fn test_type<T>(max: T)

@@ -5,11 +5,10 @@ use crate::QlCrypto;
 const PAIRING_ID_DOMAIN: &[u8] = b"ql-wire:pairing-id:v1";
 const PAIRING_PSK_DOMAIN: &[u8] = b"ql-wire:pairing-psk:v1";
 
-ql_codec::codec! {
-    #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-    #[repr(transparent)]
-    pub struct PairingToken(pub [u8; Self::SIZE]);
-}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ql_codec::Codec)]
+#[codec(frozen)]
+#[repr(transparent)]
+pub struct PairingToken(pub [u8; PairingToken::SIZE]);
 
 impl fmt::Debug for PairingToken {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -41,11 +40,10 @@ impl Display for PairingToken {
     }
 }
 
-ql_codec::codec! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    #[repr(transparent)]
-    pub struct PairingId(pub [u8; Self::SIZE]);
-}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, ql_codec::Codec)]
+#[codec(frozen)]
+#[repr(transparent)]
+pub struct PairingId(pub [u8; PairingId::SIZE]);
 
 impl PairingId {
     pub const SIZE: usize = 16;
