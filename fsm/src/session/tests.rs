@@ -428,7 +428,6 @@ fn ack_reopens_write_capacity() {
     let mut stream = fsm.stream(stream_id).unwrap();
     assert_eq!(stream.io().writer().active().unwrap().write(&mut bytes), 4);
     stream.metadata_mut().pending_write = Bytes::from_static(b"z");
-    drop(stream);
     let (record_seq, _record) = next_outbound(&mut fsm, now).unwrap();
 
     let mut events = Vec::new();
@@ -464,7 +463,6 @@ fn ack_of_fin_notifies_metadata_once() {
     let mut stream = fsm.stream(stream_id).unwrap();
     assert_eq!(stream.io().writer().active().unwrap().write(&mut bytes), 4);
     stream.io().writer().active().unwrap().finish();
-    drop(stream);
 
     let (record_seq, record) = next_outbound(&mut fsm, now).unwrap();
     assert!(matches!(
@@ -692,7 +690,6 @@ fn inbound_stream_data_queues_opened_and_notifies_metadata() {
         assert_eq!(bytes, b"hello");
         reader.commit_read(bytes.len()).unwrap();
     }
-    drop(stream);
     let mut stream = fsm.stream(stream_id).unwrap();
     assert_eq!(stream.metadata().inbound_finished, 1);
     assert!(stream.io().reader().active().is_none());
@@ -1008,7 +1005,6 @@ fn draining_the_last_bytes_reaps_a_terminal_stream_on_next_poll() {
         assert_eq!(bytes, b"hello");
         reader.commit_read(bytes.len()).unwrap();
     }
-    drop(stream);
 
     assert!(fsm.state.streams.contains_key(&stream_id));
     fsm.take_next_write(now);
