@@ -151,7 +151,10 @@ impl<B: ByteSlice> ql_codec::Decode<B> for RecordAck {
         let largest_acked = reader.decode()?;
         let block_count = *reader.decode::<Varint<u32>>()? as usize;
         let first_range_len = reader.decode()?;
-        let mut blocks = Vec::with_capacity(block_count);
+        // At most as much memory as the input, or a corrupt count could reserve gigabytes.
+        let mut blocks = Vec::with_capacity(
+            block_count.min(reader.remaining_len() / size_of::<RecordAckBlock>()),
+        );
         for _ in 0..block_count {
             blocks.push(RecordAckBlock {
                 gap: reader.decode()?,
