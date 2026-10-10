@@ -1,6 +1,6 @@
 use std::borrow::Borrow;
 
-use ql_codec::{ByteSlice, Encode};
+use ql_codec::Encode;
 
 use super::{
     decrypt_mlkem_ciphertext, decrypt_peer_bundle, encrypt_mlkem_ciphertext, encrypt_peer_bundle,
@@ -46,8 +46,8 @@ impl Encode for Ik1 {
     }
 }
 
-impl<B: ByteSlice> ql_codec::Decode<B> for Ik1 {
-    fn decode(reader: &mut ql_codec::Reader<B>) -> Result<Self, ql_codec::Error> {
+impl ql_codec::DecodeValue for Ik1 {
+    fn decode_value(reader: &mut ql_codec::Reader<'_>) -> Result<Self, ql_codec::Error> {
         let handshake_id = reader.decode()?;
         let transport_params = reader.decode()?;
         let skem_ciphertext = reader.decode()?;
@@ -67,14 +67,13 @@ impl<B: ByteSlice> ql_codec::Decode<B> for Ik1 {
     }
 }
 
-ql_codec::codec! {
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct Ik2 {
-        pub handshake_id: HandshakeId,
-        pub transport_params: TransportParams,
-        pub ekem_ciphertext: MlKemCiphertext,
-        pub skem_ciphertext: EncryptedMlKemCiphertext,
-    }
+#[derive(Debug, Clone, PartialEq, Eq, ql_codec::Codec)]
+#[codec(frozen)]
+pub struct Ik2 {
+    pub handshake_id: HandshakeId,
+    pub transport_params: TransportParams,
+    pub ekem_ciphertext: MlKemCiphertext,
+    pub skem_ciphertext: EncryptedMlKemCiphertext,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -355,7 +355,8 @@ fn handshake_timeout_drops_single_ik_attempt_without_resend() {
     harness.connect_ik(Side::A).unwrap();
     harness.drain_events(Side::A);
     let first = harness.next_outbound(Side::A).unwrap();
-    let (_, first) = ql_wire::decode_record::<QlHandshakeRecord, _>(first.as_slice()).unwrap();
+    let (_, first) = ql_wire::decode_record::<QlHandshakeRecord>(first.as_slice()).unwrap();
+    let first = first.into_owned();
     assert!(matches!(first, ql_wire::QlHandshakeRecord::Ik1(_)));
     assert!(harness.next_outbound(Side::A).is_none());
 
@@ -427,7 +428,8 @@ fn simultaneous_ik_and_kk_connect_prefers_ik() {
 }
 
 fn handshake_id(record: &[u8]) -> ql_wire::HandshakeId {
-    let (_, record) = ql_wire::decode_record(record).unwrap();
+    let (_, record) = ql_wire::decode_record::<ql_wire::QlHandshakeRecord>(record).unwrap();
+    let record = record.into_owned();
     match record {
         ql_wire::QlHandshakeRecord::Ik1(message) => message.handshake_id,
         ql_wire::QlHandshakeRecord::Ik2(message) => message.handshake_id,

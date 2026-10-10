@@ -268,6 +268,9 @@ impl<M: StreamMeta> QlFsm<M> {
     }
 
     /// handles one inbound wire message and returns whether it was processed rather than ignored
+    ///
+    /// `bytes` must show the same bytes through `as_ref()` and `as_mut()`. It's kept as the
+    /// backing store of the stream data it carries, so nothing is copied.
     pub fn receive<B>(
         &mut self,
         now: Instant,
@@ -275,7 +278,7 @@ impl<M: StreamMeta> QlFsm<M> {
         crypto: &impl QlCrypto,
     ) -> Result<bool, ReceiveError>
     where
-        B: AsMut<[u8]> + Into<Bytes>,
+        B: AsRef<[u8]> + AsMut<[u8]> + Send + 'static,
     {
         self.state.now = now;
         fsm::receive(self, bytes, crypto)

@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "btp",
   "codec",
+  "codec/macro",
   "common",
   "keyos",
   "router",
@@ -21,7 +22,8 @@ license = "MIT OR Apache-2.0"
 bytes = "1.11.1"
 
 # workspace crates
-ql-codec = { path = "codec" }
+ql-codec = { path = "codec", features = ["derive"] }
+ql-codec-macro = { path = "codec/macro" }
 ql-common = { path = "common" }
 ql-fsm = { path = "fsm" }
 ql-keyos = { path = "keyos" }

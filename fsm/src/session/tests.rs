@@ -138,7 +138,7 @@ fn receive_events<M: StreamMeta>(
         assert!(builder.push_frame(frame));
     }
     let bytes = Bytes::from(builder.bytes().to_vec());
-    let frames = parse_session_frames(bytes);
+    let frames = parse_session_frames(&bytes);
     let mut events = Vec::new();
     let mut emit = |event| events.push(event);
     fsm.receive(now, seq, frames, &mut emit);

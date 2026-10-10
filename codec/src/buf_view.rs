@@ -41,6 +41,7 @@ impl BufView for [u8] {
     where
         Self: 'a;
 
+    #[inline]
     fn buf(&self) -> Self::Buf<'_> {
         self
     }
@@ -63,6 +64,7 @@ impl BufView for Vec<u8> {
     where
         Self: 'a;
 
+    #[inline]
     fn buf(&self) -> Self::Buf<'_> {
         self.as_slice()
     }
@@ -74,6 +76,7 @@ impl BufView for Box<[u8]> {
     where
         Self: 'a;
 
+    #[inline]
     fn buf(&self) -> Self::Buf<'_> {
         self.as_ref()
     }
@@ -85,6 +88,7 @@ impl BufView for Bytes {
     where
         Self: 'a;
 
+    #[inline]
     fn buf(&self) -> Self::Buf<'_> {
         self.as_ref()
     }

@@ -1,6 +1,6 @@
 //! authenticated QuantumLink handshake patterns
 
-use ql_codec::{ByteSlice, Decode, Encode};
+use ql_codec::{Decode, Encode};
 
 use crate::{
     Error, HandshakeKind, MlKemCiphertext, MlKemKeyPair, MlKemPublicKey, Nonce, PeerBundle,
@@ -24,17 +24,15 @@ const PROTOCOL_IK: &[u8] = b"ql-wire:pq-ik:v1";
 const PROTOCOL_KK: &[u8] = b"ql-wire:pq-kk:v1";
 const HANDSHAKE_PREAMBLE_DOMAIN: &[u8] = b"ql-wire:handshake-preamble:v1";
 
-ql_codec::codec! {
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct EphemeralPublicKey {
-        pub mlkem_public_key: MlKemPublicKey,
-    }
+#[derive(Debug, Clone, PartialEq, Eq, ql_codec::Codec)]
+#[codec(frozen)]
+pub struct EphemeralPublicKey {
+    pub mlkem_public_key: MlKemPublicKey,
 }
 
-ql_codec::codec! {
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct EncryptedMlKemCiphertext(pub Box<[u8; Self::SIZE]>);
-}
+#[derive(Debug, Clone, PartialEq, Eq, ql_codec::Codec)]
+#[codec(frozen)]
+pub struct EncryptedMlKemCiphertext(pub Box<[u8; EncryptedMlKemCiphertext::SIZE]>);
 
 impl EncryptedMlKemCiphertext {
     pub const SIZE: usize = MlKemCiphertext::SIZE + ENCRYPTED_MESSAGE_AUTH_SIZE;
@@ -67,10 +65,9 @@ impl Encode for EncryptedPeerBundle {
     }
 }
 
-impl<B: ByteSlice> ql_codec::Decode<B> for EncryptedPeerBundle {
-    fn decode(reader: &mut ql_codec::Reader<B>) -> Result<Self, ql_codec::Error> {
-        let data = reader.take_all();
-        Ok(Self(Box::from(&*data)))
+impl ql_codec::DecodeValue for EncryptedPeerBundle {
+    fn decode_value(reader: &mut ql_codec::Reader<'_>) -> Result<Self, ql_codec::Error> {
+        Ok(Self(Box::from(reader.take_all())))
     }
 }
 

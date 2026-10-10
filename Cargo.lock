@@ -1321,6 +1321,17 @@ name = "ql-codec"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "ql-codec-macro",
+]
+
+[[package]]
+name = "ql-codec-macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "ql-codec",
+ "quote",
+ "syn",
 ]
 
 [[package]]
