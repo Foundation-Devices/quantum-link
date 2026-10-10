@@ -4,11 +4,14 @@ use ql_common::{ResetCode, StreamId, QID};
 use super::*;
 
 fn decode_handshake_record(bytes: &[u8]) -> QlHandshakeRecord {
-    decode_record(bytes).unwrap().1
+    decode_record::<QlHandshakeRecord>(bytes)
+        .unwrap()
+        .1
+        .into_owned()
 }
 
 fn decode_session_record(bytes: &[u8]) -> QlSessionRecord<Vec<u8>> {
-    let (_, record) = decode_record::<QlSessionRecord<_>, _>(bytes).unwrap();
+    let (_, record) = decode_record::<QlSessionRecord<Vec<u8>>>(bytes).unwrap();
     record.into_owned()
 }
 
@@ -47,7 +50,7 @@ fn encrypt_record(
     route: RouteHeader,
     header: SessionHeader,
     session_key: &SessionKey,
-    body: &[SessionFrame<Vec<u8>>],
+    body: &[SessionFrame],
 ) -> QlSessionRecord<Vec<u8>> {
     let mut builder = SessionRecordBuilder::new(header.seq, usize::MAX);
     for frame in body {
@@ -951,7 +954,6 @@ fn encoded_len_matches_encoding() {
         &RecordHeader::new(route(1, 2), RecordType::Handshake),
     );
     assert_encoded_len("RecordType", &RecordType::Session);
-    assert_encoded_len("HandshakeKind", &HandshakeKind::Xx4);
     assert_encoded_len("SessionHeader", &SessionHeader { seq: RecordSeq(7) });
     assert_encoded_len("ResetTarget", &ResetTarget::Both);
     assert_encoded_len(
@@ -1011,10 +1013,10 @@ fn encoded_len_matches_encoding() {
             payload,
         },
     );
-    assert_encoded_len("SessionFrame::Ping", &SessionFrame::<Vec<u8>>::Ping);
+    assert_encoded_len("SessionFrame::Ping", &SessionFrame::Ping);
     assert_encoded_len(
         "SessionFrame::Close",
-        &SessionFrame::<Vec<u8>>::Close(SessionClose {
+        &SessionFrame::Close(SessionClose {
             code: SessionCloseCode::PROTOCOL,
         }),
     );

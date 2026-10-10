@@ -1,13 +1,13 @@
-use crate::{varint, ByteSlice, Decode, Error};
+use crate::{varint, Decode, Error};
 
 #[derive(Clone)]
-pub struct Reader<B> {
-    remaining: B,
+pub struct Reader<'a> {
+    remaining: &'a [u8],
 }
 
-impl<B: ByteSlice> Reader<B> {
+impl<'a> Reader<'a> {
     #[inline]
-    pub fn new(bytes: B) -> Self {
+    pub fn new(bytes: &'a [u8]) -> Self {
         Self { remaining: bytes }
     }
 
@@ -21,33 +21,51 @@ impl<B: ByteSlice> Reader<B> {
         self.remaining.len()
     }
 
-    pub fn take_n(&mut self, len: usize) -> Result<B, Error> {
-        if len > self.remaining.len() {
-            return Err(Error::UnexpectedEof);
-        }
-        Ok(self.remaining.split_off_front(len))
+    #[inline]
+    pub fn take_n(&mut self, len: usize) -> Result<&'a [u8], Error> {
+        let (head, tail) = self
+            .remaining
+            .split_at_checked(len)
+            .ok_or(Error::UnexpectedEof)?;
+        self.remaining = tail;
+        Ok(head)
+    }
+
+    pub fn take_array<const N: usize>(&mut self) -> Result<&'a [u8; N], Error> {
+        let (head, tail) = self
+            .remaining
+            .split_first_chunk()
+            .ok_or(Error::UnexpectedEof)?;
+        self.remaining = tail;
+        Ok(head)
     }
 
     #[inline]
     pub fn take_u8(&mut self) -> Result<u8, Error> {
-        self.remaining.take_u8().ok_or(Error::UnexpectedEof)
+        let (&byte, tail) = self.remaining.split_first().ok_or(Error::UnexpectedEof)?;
+        self.remaining = tail;
+        Ok(byte)
     }
 
-    pub fn take_all(&mut self) -> B {
-        self.remaining.split_off_front(self.remaining.len())
+    #[inline]
+    pub fn take_all(&mut self) -> &'a [u8] {
+        std::mem::take(&mut self.remaining)
     }
 
-    pub fn take_len_prefixed(&mut self) -> Result<B, Error> {
+    #[inline]
+    pub fn take_len_prefixed(&mut self) -> Result<&'a [u8], Error> {
         let len = self.decode_varint::<u32>()?;
         self.take_n(len as usize)
     }
 
     #[inline]
-    pub fn decode<T>(&mut self) -> Result<T, Error>
-    where
-        T: Decode<B>,
-    {
+    pub fn decode<T: Decode>(&mut self) -> Result<T, Error> {
         T::decode(self)
+    }
+
+    #[inline]
+    pub fn decode_ref<T: Decode>(&mut self) -> Result<T::Ref<'a>, Error> {
+        T::decode_ref(self)
     }
 
     #[inline]

@@ -2,15 +2,14 @@ use ql_common::QID;
 
 use crate::{derive_qid, Error, MlKemKeyPair, MlKemPrivateKey, MlKemPublicKey, QlCrypto, QlHash};
 
-ql_codec::codec! {
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct PeerBundle {
-        pub version: u16,
-        pub qid: QID,
-        pub capabilities: u32,
-        pub mlkem_public_key: MlKemPublicKey,
-        pub name: String,
-    }
+#[derive(Debug, Clone, PartialEq, Eq, ql_codec::Codec)]
+#[codec(frozen)]
+pub struct PeerBundle {
+    pub version: u16,
+    pub qid: QID,
+    pub capabilities: u32,
+    pub mlkem_public_key: MlKemPublicKey,
+    pub name: String,
 }
 
 impl PeerBundle {
@@ -24,15 +23,14 @@ impl PeerBundle {
     }
 }
 
-ql_codec::codec! {
-    #[derive(Debug, Clone)]
-    pub struct QlIdentity {
-        pub qid: QID,
-        pub mlkem_private_key: MlKemPrivateKey,
-        pub mlkem_public_key: MlKemPublicKey,
-        pub capabilities: u32,
-        pub name: String,
-    }
+#[derive(Debug, Clone, ql_codec::Codec)]
+#[codec(frozen)]
+pub struct QlIdentity {
+    pub qid: QID,
+    pub mlkem_private_key: MlKemPrivateKey,
+    pub mlkem_public_key: MlKemPublicKey,
+    pub capabilities: u32,
+    pub name: String,
 }
 
 impl QlIdentity {

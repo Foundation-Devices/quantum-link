@@ -37,11 +37,10 @@ pub fn packet_version(data: &[u8]) -> Option<Version> {
     }
 }
 
-ql_codec::codec! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    struct Header {
-        sequence: u16,
-        index: u16,
-        tagged_record_len: u32,
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ql_codec::Codec)]
+#[codec(frozen)]
+struct Header {
+    sequence: u16,
+    index: u16,
+    tagged_record_len: u32,
 }

@@ -4,12 +4,13 @@
 //! route keys pair these identifiers with [`RouteId`] for RPC dispatch
 //! [`PeerPermissions`] lists the apps a peer may access
 
-use ql_codec::{ByteSlice, Decode, Encode, Reader};
+use ql_codec::{Encode, Reader};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, ql_codec::Codec)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[codec(frozen)]
 #[repr(transparent)]
-pub struct AppId(pub [u8; Self::SIZE]);
+pub struct AppId(pub [u8; AppId::SIZE]);
 
 impl AppId {
     pub const SIZE: usize = 16;
@@ -36,22 +37,6 @@ impl AppId {
         }
 
         Self(app_id)
-    }
-}
-
-impl Encode for AppId {
-    fn encoded_len(&self) -> usize {
-        Self::SIZE
-    }
-
-    fn encode<W: bytes::BufMut + ?Sized>(&self, out: &mut W) {
-        self.0.encode(out);
-    }
-}
-
-impl<B: ByteSlice> Decode<B> for AppId {
-    fn decode(reader: &mut Reader<B>) -> Result<Self, ql_codec::Error> {
-        Ok(Self(reader.decode()?))
     }
 }
 

@@ -88,7 +88,7 @@ impl SessionRecordBuilder {
         self.push_frame_payload(super::SessionFrameKind::Close, close)
     }
 
-    pub fn push_frame<B: BufView>(&mut self, frame: &SessionFrame<B>) -> bool {
+    pub fn push_frame(&mut self, frame: &SessionFrame) -> bool {
         match frame {
             SessionFrame::Ping => self.push_ping(),
             SessionFrame::Unpair => self.push_unpair(),

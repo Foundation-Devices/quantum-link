@@ -1,5 +1,4 @@
-ql_codec::codec! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #[repr(transparent)]
-    pub struct HandshakeId(pub u32);
-}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, ql_codec::Codec)]
+#[codec(frozen)]
+#[repr(transparent)]
+pub struct HandshakeId(pub u32);
