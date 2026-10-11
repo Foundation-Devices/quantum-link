@@ -14,12 +14,13 @@ pub struct Varint<T>(pub T);
 
 pub trait Primitive: Copy {
     const MAX_ENCODED_LEN: usize;
+    const LAST_PAYLOAD_MAX: u8;
 
     fn from_u8(value: u8) -> Self;
     fn low_7_bits(self) -> u8;
     fn shr_7(self) -> Self;
     fn needs_more(self) -> bool;
-    fn checked_add_payload(self, payload: u8, shift: usize) -> Option<Self>;
+    fn add_payload(self, payload: u8, shift: usize) -> Self;
 }
 
 impl<T: Primitive> Varint<T> {
@@ -78,30 +79,31 @@ where
     out.put_u8(value.low_7_bits());
 }
 
+#[inline]
 pub fn decode<T, B>(reader: &mut Reader<B>) -> Result<T, Error>
 where
     T: Primitive,
     B: ByteSlice,
 {
-    let mut value = T::from_u8(0);
+    let first = reader.take_u8()?;
+    if first < 0x80 {
+        return Ok(T::from_u8(first));
+    }
 
-    for index in 0..T::MAX_ENCODED_LEN {
-        let byte = reader.decode::<u8>()?;
-        let payload = byte & 0x7f;
-
-        value = value
-            .checked_add_payload(payload, index * 7)
-            .ok_or(Error::InvalidVarint)?;
-
-        if byte & 0x80 == 0 {
-            if index > 0 && payload == 0 {
-                return Err(Error::InvalidVarint);
-            }
+    let mut value = T::from_u8(first & 0x7f);
+    for index in 1..T::MAX_ENCODED_LEN - 1 {
+        let byte = reader.take_u8()?;
+        value = value.add_payload(byte & 0x7f, index * 7);
+        if byte < 0x80 {
             return Ok(value);
         }
     }
 
-    Err(Error::InvalidVarint)
+    let last = reader.take_u8()?;
+    if last > T::LAST_PAYLOAD_MAX {
+        return Err(Error::InvalidVarint);
+    }
+    Ok(value.add_payload(last, (T::MAX_ENCODED_LEN - 1) * 7))
 }
 
 macro_rules! impl_varint {
@@ -109,6 +111,8 @@ macro_rules! impl_varint {
         $(
             impl Primitive for $ty {
                 const MAX_ENCODED_LEN: usize = (size_of::<Self>() * 8).div_ceil(7);
+                #[allow(clippy::cast_possible_truncation)]
+                const LAST_PAYLOAD_MAX: u8 = (Self::MAX >> ((Self::MAX_ENCODED_LEN - 1) * 7)) as u8;
 
                 #[inline]
                 fn from_u8(value: u8) -> Self {
@@ -128,17 +132,8 @@ macro_rules! impl_varint {
                     self >= 0x80
                 }
                 #[inline]
-                fn checked_add_payload(self, payload: u8, shift: usize) -> Option<Self> {
-                    let bit_width = size_of::<Self>() * 8;
-                    if shift >= bit_width {
-                        return (payload == 0).then_some(self);
-                    }
-                    let max_payload = Self::MAX >> shift;
-                    let payload = Self::from(payload);
-                    if payload > max_payload {
-                        return None;
-                    }
-                    Some(self | (payload << shift))
+                fn add_payload(self, payload: u8, shift: usize) -> Self {
+                    self | (Self::from(payload) << shift)
                 }
             }
         )*
@@ -196,7 +191,6 @@ mod tests {
         assert_eq!(decode(&mut reader), Ok(T::from_u8(127)));
         assert_eq!(reader.take_all(), &[0x55]);
 
-        assert_error::<T>(&[0x80, 0x00], Error::InvalidVarint);
         assert_error::<T>(&[0x80], Error::UnexpectedEof);
         assert_error::<T>(&vec![0xff; T::MAX_ENCODED_LEN], Error::InvalidVarint);
 
