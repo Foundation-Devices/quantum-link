@@ -16,15 +16,36 @@
 //! on an enum also generates `Name`, its variants without their fields and numbered by
 //! enumerator, and a `discriminant()` method returning it.
 //!
+//! vectors and arrays decode their elements into `Vec<T::Ref>` and `[T::Ref; N]`, including
+//! byte vectors and arrays. [`Aligned`] wraps a fixed width integer vector or array to borrow
+//! its values as `&[T]` or `&[T; N]` instead of constructing a collection.
+//! the wire encoding stays the same. the actual payload address must be aligned, and multibyte
+//! integers require a little endian target. borrowed decoding rejects misaligned input with
+//! [`Error::InvalidAlignment`]. owned decoding reads the integers normally.
+//!
+//! ```
+//! # #[cfg(feature = "derive")]
+//! # mod example {
+//! use ql_codec::{Aligned, Codec};
+//!
+//! #[derive(Codec)]
+//! struct Message {
+//!     numbers: Aligned<Vec<u32>>,
+//! }
+//! # }
+//! ```
+//!
 //! Decoding recurses once per level of nesting, so a type decoded from untrusted input must not
 //! be recursive, or a deep enough encoding overflows the stack.
 
+mod aligned;
 mod buf_view;
 mod codec;
 mod error;
 mod reader;
 pub mod varint;
 
+pub use aligned::Aligned;
 pub use buf_view::BufView;
 pub use bytes::BufMut;
 pub use codec::{
@@ -52,7 +73,7 @@ pub trait Encode {
 }
 
 pub trait Decode: Sized {
-    /// `Self` with byte buffers and strings borrowed from the encoding
+    /// the form produced by borrowed decoding
     type Ref<'a>;
 
     fn decode_ref<'a>(reader: &mut Reader<'a>) -> Result<Self::Ref<'a>, Error>;
@@ -125,19 +146,6 @@ impl<T: DecodeValue> Decode for T {
     }
 }
 
-/// Marks every encodable type except `u8`
-///
-/// A `Vec<u8>` borrows as `&[u8]`, because its encoded bytes already are the values. Any other
-/// `Vec<T>` decodes item by item into a `Vec<T::Ref>`: the items are built while decoding, so
-/// the list needs storage of its own, and only leaves such as `&[u8]` and `&str` borrow from
-/// the encoding. Nested lists allocate at every level.
-///
-/// These are two separate impls for `Vec`, and Rust can't express the `T != u8` that would keep
-/// them apart, so every other type opts in here instead. The derive and `varint_wrapper!` do
-/// that, hand-written impls need an `impl Element for T {}`. Without it, `Vec<T>` and `[T; N]`
-/// don't implement [`Encode`] and [`Decode`], which shows up as an unsatisfied `T: Element`.
-pub trait Element {}
-
 impl<T: Encode + ?Sized> Encode for &T {
     fn encoded_len(&self) -> usize {
         (**self).encoded_len()
@@ -147,8 +155,6 @@ impl<T: Encode + ?Sized> Encode for &T {
         (**self).encode(out);
     }
 }
-
-impl<T: ?Sized> Element for &T {}
 
 /// Implements the codec traits for a newtype over an integer, carried as a varint
 #[macro_export]
@@ -171,7 +177,5 @@ macro_rules! varint_wrapper {
                 Ok(Self(reader.decode_varint::<$inner>()?))
             }
         }
-
-        impl $crate::Element for $name {}
     };
 }

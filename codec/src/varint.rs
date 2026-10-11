@@ -2,7 +2,7 @@ use core::{fmt, ops::Deref};
 
 use bytes::BufMut;
 
-use crate::{DecodeValue, Element, Encode, Error, Reader};
+use crate::{DecodeValue, Encode, Error, Reader};
 
 /// An integer field carried as a varint
 ///
@@ -61,8 +61,6 @@ impl<T: Primitive> DecodeValue for Varint<T> {
         Some(Self(T::from_u8(0)))
     }
 }
-
-impl<T> Element for Varint<T> {}
 
 pub fn encoded_len<T: Primitive>(mut value: T) -> usize {
     let mut len = 1;

@@ -149,9 +149,6 @@ fn expand(
                     #encode
                 }
             }
-
-            #[automatically_derived]
-            impl #impl_generics ::ql_codec::Element for #ty #where_clause {}
         )
     };
     let owned_encode = encode_impl(

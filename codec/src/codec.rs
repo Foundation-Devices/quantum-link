@@ -6,7 +6,7 @@ use std::{
 
 use bytes::{Buf, BufMut, Bytes};
 
-use crate::{varint, BufView, Decode, DecodeValue, Element, Encode, Error, Reader};
+use crate::{varint, BufView, Decode, DecodeValue, Encode, Error, Reader};
 
 macro_rules! impl_codec {
     (fixed_integer: $($ty:ty),* $(,)?) => {
@@ -99,56 +99,17 @@ macro_rules! impl_codec {
                     Some(($($name::missing()?,)+))
                 }
             }
-
-            impl<$($name),+> Element for ($($name,)+) {}
         )*
-    };
-    (element: $($ty:ty),* $(,)?) => {
-        $(impl Element for $ty {})*
     };
 }
 
 impl_codec!(fixed_integer: u8, u16, u32, u64, i8, i16, i32, i64);
 impl_codec!(
     byte_buffer:
-    Vec<u8> => <[u8]>::to_vec,
     Box<[u8]> => Box::from,
     Bytes => Bytes::copy_from_slice,
 );
 impl_codec!(tuple: (A 0, B 1), (A 0, B 1, C 2));
-// Everything but `u8`, so `Vec<u8>` can borrow as `&[u8]`.
-impl_codec!(
-    element: u16, u32, u64, i8, i16, i32, i64, usize, bool, NonZeroU8, (),
-    Vec<u8>, Box<[u8]>, Bytes, String, Duration, SystemTime,
-);
-
-impl<const N: usize> Encode for [u8; N] {
-    fn encoded_len(&self) -> usize {
-        N
-    }
-
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
-        out.put_slice(self);
-    }
-}
-
-impl<const N: usize> Decode for [u8; N] {
-    type Ref<'a> = &'a [u8; N];
-
-    fn decode_ref<'a>(reader: &mut Reader<'a>) -> Result<Self::Ref<'a>, Error> {
-        reader.take_array()
-    }
-
-    fn from_ref(value: &[u8; N]) -> Self {
-        *value
-    }
-
-    fn missing<'a>() -> Option<Self::Ref<'a>> {
-        Some(&const { [0; N] })
-    }
-}
-
-impl<const N: usize> Element for [u8; N] {}
 
 impl<const N: usize> Encode for Box<[u8; N]> {
     fn encoded_len(&self) -> usize {
@@ -179,9 +140,7 @@ impl<const N: usize> Decode for Box<[u8; N]> {
     }
 }
 
-impl<const N: usize> Element for Box<[u8; N]> {}
-
-impl<T: Encode + Element, const N: usize> Encode for [T; N] {
+impl<T: Encode, const N: usize> Encode for [T; N] {
     fn encoded_len(&self) -> usize {
         self.iter().map(Encode::encoded_len).sum()
     }
@@ -193,11 +152,11 @@ impl<T: Encode + Element, const N: usize> Encode for [T; N] {
     }
 }
 
-impl<T: Decode + Element, const N: usize> Decode for [T; N] {
+impl<T: Decode, const N: usize> Decode for [T; N] {
     type Ref<'a> = [T::Ref<'a>; N];
 
     fn decode_ref<'a>(reader: &mut Reader<'a>) -> Result<Self::Ref<'a>, Error> {
-        decode_array(reader, T::decode_ref)
+        decode_array(|| T::decode_ref(reader))
     }
 
     fn from_ref(value: Self::Ref<'_>) -> Self {
@@ -205,46 +164,37 @@ impl<T: Decode + Element, const N: usize> Decode for [T; N] {
     }
 
     fn decode(reader: &mut Reader<'_>) -> Result<Self, Error> {
-        decode_array(reader, T::decode)
+        decode_array(|| T::decode(reader))
     }
 
     fn missing<'a>() -> Option<Self::Ref<'a>> {
-        let items = (0..N).map(|_| T::missing()).collect::<Option<Vec<_>>>()?;
-        Some(into_array(items))
+        decode_array(|| T::missing().ok_or(())).ok()
     }
 }
 
-impl<T: Element, const N: usize> Element for [T; N] {}
-
-fn decode_array<'a, T, const N: usize>(
-    reader: &mut Reader<'a>,
-    decode_item: impl Fn(&mut Reader<'a>) -> Result<T, Error>,
-) -> Result<[T; N], Error> {
-    let items = (0..N)
-        .map(|_| decode_item(reader))
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(into_array(items))
-}
-
-fn into_array<T, const N: usize>(items: Vec<T>) -> [T; N] {
-    let Ok(array) = items.try_into() else {
-        unreachable!("collected exactly N items");
-    };
-    array
-}
-
-impl Encode for [u8] {
-    #[inline]
-    fn encoded_len(&self) -> usize {
-        encoded_len_bytes(self)
-    }
-
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
-        encode_bytes(self, out);
+fn decode_array<T, E, const N: usize>(
+    mut decode_item: impl FnMut() -> Result<T, E>,
+) -> Result<[T; N], E> {
+    let mut error = None;
+    let items: [Option<T>; N] = std::array::from_fn(|_| {
+        if error.is_some() {
+            return None;
+        }
+        match decode_item() {
+            Ok(item) => Some(item),
+            Err(err) => {
+                error = Some(err);
+                None
+            }
+        }
+    });
+    match error {
+        Some(error) => Err(error),
+        None => Ok(items.map(|item| item.expect("decoded every array item"))),
     }
 }
 
-impl<T: Encode + Element> Encode for Vec<T> {
+impl<T: Encode> Encode for [T] {
     fn encoded_len(&self) -> usize {
         varint::encoded_len(len_prefix(self.len()))
             + self.iter().map(Encode::encoded_len).sum::<usize>()
@@ -258,7 +208,17 @@ impl<T: Encode + Element> Encode for Vec<T> {
     }
 }
 
-impl<T: Decode + Element> Decode for Vec<T> {
+impl<T: Encode> Encode for Vec<T> {
+    fn encoded_len(&self) -> usize {
+        self.as_slice().encoded_len()
+    }
+
+    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+        self.as_slice().encode(out);
+    }
+}
+
+impl<T: Decode> Decode for Vec<T> {
     type Ref<'a> = Vec<T::Ref<'a>>;
 
     fn decode_ref<'a>(reader: &mut Reader<'a>) -> Result<Self::Ref<'a>, Error> {
@@ -277,8 +237,6 @@ impl<T: Decode + Element> Decode for Vec<T> {
         Some(Vec::new())
     }
 }
-
-impl<T: Element> Element for Vec<T> {}
 
 fn decode_list<'a, T>(
     reader: &mut Reader<'a>,
@@ -340,8 +298,6 @@ where
         Some(BTreeMap::new())
     }
 }
-
-impl<K, V> Element for BTreeMap<K, V> {}
 
 fn decode_map<'a, K: Ord, V>(
     reader: &mut Reader<'a>,
@@ -523,8 +479,6 @@ impl<T: Decode> Decode for Option<T> {
     }
 }
 
-impl<T> Element for Option<T> {}
-
 fn decode_option<'a, T>(
     reader: &mut Reader<'a>,
     decode_value: impl Fn(&mut Reader<'a>) -> Result<T, Error>,
@@ -573,8 +527,6 @@ impl<T: Decode, E: Decode> Decode for Result<T, E> {
         decode_result(reader, T::decode, E::decode)
     }
 }
-
-impl<T, E> Element for Result<T, E> {}
 
 fn decode_result<'a, T, E>(
     reader: &mut Reader<'a>,

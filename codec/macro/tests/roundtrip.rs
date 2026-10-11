@@ -5,11 +5,11 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use ql_codec::{Codec, Decode, Encode};
+use ql_codec::{Aligned, Codec, Decode, Encode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Codec)]
 #[codec(frozen)]
-pub struct AppId(pub [u8; 16]);
+pub struct AppId(pub Aligned<[u8; 16]>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Codec)]
 pub enum Location {
@@ -31,9 +31,9 @@ pub struct InstalledApp {
     pub app_id: AppId,
     pub pid: Option<NonZeroU8>,
     pub name: String,
-    pub icon: Vec<u8>,
+    pub icon: Aligned<Vec<u8>>,
     pub permissions: Vec<Permission>,
-    pub signatures: Vec<Vec<u8>>,
+    pub signatures: Vec<Aligned<Vec<u8>>>,
     pub keywords: Vec<String>,
     pub nine_slice: Option<[u16; 4]>,
     pub size: usize,
@@ -54,7 +54,7 @@ pub enum AppManagerError {
 #[derive(Debug, Clone, PartialEq, Eq, Codec)]
 pub struct WriteFile {
     pub path: String,
-    pub data: Vec<u8>,
+    pub data: Aligned<Vec<u8>>,
     pub location: Location,
 }
 
@@ -112,10 +112,10 @@ mod own_result {
 
 fn installed_app() -> InstalledApp {
     InstalledApp {
-        app_id: AppId(*b"wallet-app-id-16"),
+        app_id: AppId(Aligned(*b"wallet-app-id-16")),
         pid: NonZeroU8::new(42),
         name: "Wallet".into(),
-        icon: (0..=255).collect(),
+        icon: Aligned((0..=255).collect()),
         permissions: vec![
             Permission::Camera,
             Permission::Files {
@@ -124,7 +124,7 @@ fn installed_app() -> InstalledApp {
             },
             Permission::Custom("dev".into()),
         ],
-        signatures: vec![vec![0xaa; 64], vec![]],
+        signatures: vec![Aligned(vec![0xaa; 64]), Aligned(vec![])],
         keywords: vec!["bitcoin".into(), "".into()],
         nine_slice: Some([4, 4, 8, 8]),
         size: 3 << 20,
@@ -172,7 +172,7 @@ fn borrowed_form_encodes_like_the_owned_one() {
 
     let owned = WriteFile {
         path: "notes.txt".into(),
-        data: data.to_vec(),
+        data: Aligned(data.to_vec()),
         location: Location::AppData,
     };
     assert_eq!(bytes, owned.encode_vec());
@@ -183,7 +183,7 @@ fn borrowed_form_encodes_like_the_owned_one() {
 fn responses_roundtrip() {
     let sparse = InstalledApp {
         pid: None,
-        icon: vec![],
+        icon: Aligned(vec![]),
         permissions: vec![],
         nine_slice: None,
         ..installed_app()
@@ -191,7 +191,7 @@ fn responses_roundtrip() {
     let responses: [Result<Vec<InstalledApp>, AppManagerError>; 6] = [
         Ok(vec![]),
         Ok(vec![installed_app(), sparse]),
-        Err(AppManagerError::NotInstalled(AppId([7; 16]))),
+        Err(AppManagerError::NotInstalled(AppId(Aligned([7; 16])))),
         Err(AppManagerError::PermissionDenied {
             location: Location::Usb,
         }),
@@ -224,7 +224,7 @@ fn generic_types_roundtrip() {
         cid: 7,
         message: WriteFile {
             path: "notes.txt".into(),
-            data: vec![1, 2, 3],
+            data: Aligned(vec![1, 2, 3]),
             location: Location::Usb,
         },
     };
