@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fmt::Debug,
     num::NonZeroU8,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -70,6 +71,9 @@ pub enum SeekFrom {
     End(i64),
     Current(i64),
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Codec)]
+pub struct IconSet(pub BTreeMap<String, Vec<u8>>);
 
 #[derive(Debug, Clone, PartialEq, Eq, Codec)]
 #[codec(frozen)]
@@ -197,6 +201,21 @@ fn responses_roundtrip() {
     for response in &responses {
         roundtrip(response);
     }
+}
+
+#[test]
+fn maps_roundtrip() {
+    let icons = IconSet(BTreeMap::from([
+        ("wallet".to_string(), vec![1, 2, 3]),
+        ("camera".to_string(), vec![]),
+    ]));
+    roundtrip(&icons);
+    roundtrip(&IconSet(BTreeMap::new()));
+
+    let bytes = icons.encode_vec();
+    let borrowed = IconSet::decode_bytes_ref(&bytes).unwrap();
+    assert_eq!(borrowed.0["wallet"], [1, 2, 3]);
+    assert_eq!(borrowed.encode_vec(), bytes);
 }
 
 #[test]

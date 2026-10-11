@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     num::NonZeroU8,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -290,6 +291,67 @@ fn decode_list<'a, T>(
         items.push(decode_item(reader)?);
     }
     Ok(items)
+}
+
+/// Encodes like a list of key and value pairs
+impl<K: Encode, V: Encode> Encode for BTreeMap<K, V> {
+    fn encoded_len(&self) -> usize {
+        varint::encoded_len(len_prefix(self.len()))
+            + self
+                .iter()
+                .map(|(key, value)| key.encoded_len() + value.encoded_len())
+                .sum::<usize>()
+    }
+
+    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+        varint::encode(len_prefix(self.len()), out);
+        for (key, value) in self {
+            key.encode(out);
+            value.encode(out);
+        }
+    }
+}
+
+/// A key that occurs twice keeps its last value
+impl<K, V> Decode for BTreeMap<K, V>
+where
+    K: Decode + Ord,
+    V: Decode,
+    for<'a> K::Ref<'a>: Ord,
+{
+    type Ref<'a> = BTreeMap<K::Ref<'a>, V::Ref<'a>>;
+
+    fn decode_ref<'a>(reader: &mut Reader<'a>) -> Result<Self::Ref<'a>, Error> {
+        decode_map(reader, K::decode_ref, V::decode_ref)
+    }
+
+    fn from_ref(value: Self::Ref<'_>) -> Self {
+        value
+            .into_iter()
+            .map(|(key, value)| (K::from_ref(key), V::from_ref(value)))
+            .collect()
+    }
+
+    fn decode(reader: &mut Reader<'_>) -> Result<Self, Error> {
+        decode_map(reader, K::decode, V::decode)
+    }
+
+    fn missing<'a>() -> Option<Self::Ref<'a>> {
+        Some(BTreeMap::new())
+    }
+}
+
+impl<K, V> Element for BTreeMap<K, V> {}
+
+fn decode_map<'a, K: Ord, V>(
+    reader: &mut Reader<'a>,
+    decode_key: impl Fn(&mut Reader<'a>) -> Result<K, Error>,
+    decode_value: impl Fn(&mut Reader<'a>) -> Result<V, Error>,
+) -> Result<BTreeMap<K, V>, Error> {
+    let entries = decode_list(reader, |reader| {
+        Ok((decode_key(reader)?, decode_value(reader)?))
+    })?;
+    Ok(entries.into_iter().collect())
 }
 
 impl Encode for str {
