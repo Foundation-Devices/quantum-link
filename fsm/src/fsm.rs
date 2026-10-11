@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, time::Instant};
 
 use bytes::Bytes;
-use ql_codec::{Decode, Reader};
+use ql_codec::Reader;
 use ql_common::StreamId;
 use ql_wire::{self as wire, QlCrypto, SessionCloseCode};
 
@@ -100,8 +100,10 @@ where
     B: AsRef<[u8]> + AsMut<[u8]> + Send + 'static,
 {
     let buffer = bytes.as_mut();
+    let buffer_len = buffer.len();
     let mut reader = Reader::new(buffer);
-    let header = wire::RecordHeader::decode(&mut reader)
+    let header: wire::RecordHeader = reader
+        .decode()
         .map_err(|error| ReceiveError::wire(ReceiveStage::RecordHeader, error))?;
 
     if header.version != wire::QL_WIRE_VERSION {
@@ -113,7 +115,8 @@ where
 
     match header.record_type {
         wire::RecordType::Handshake => {
-            let record = wire::QlHandshakeRecord::decode(&mut reader)
+            let record = reader
+                .decode()
                 .map_err(|error| ReceiveError::wire(ReceiveStage::HandshakeRecord, error))?;
             handshake::handle_handshake_record(fsm, crypto, header.route, &record)
         }
@@ -125,30 +128,19 @@ where
                     return Err(ReceiveError::InvalidQid);
                 }
                 let (decrypted, seq) = {
-                    // This decodes a borrowed `QlSessionRecord<&[u8]>`, without copying.
-                    // `Vec<u8>` is named because `Decode` is implemented on the owned form.
-                    let record = wire::QlSessionRecord::<Vec<u8>>::decode_ref(&mut reader)
+                    let record = reader
+                        .decode_ref::<wire::QlSessionRecord<Vec<u8>>>()
                         .map_err(|error| ReceiveError::wire(ReceiveStage::SessionRecord, error))?;
                     if conn.session.is_replay(record.header.seq) {
                         return Ok(false);
                     }
                     let session_header = record.header;
-                    let auth = record.payload.auth;
-                    let ciphertext_address = record.payload.ciphertext.as_ptr() as usize;
-                    let ciphertext_len = record.payload.ciphertext.len();
-
-                    // XXX: The reader only lends shared slices, so the ciphertext is located in
-                    // `buffer` by its address, to decrypt it in place.
-                    let ciphertext_start = ciphertext_address - buffer.as_ptr() as usize;
-                    let ciphertext_range = ciphertext_start..ciphertext_start + ciphertext_len;
+                    let ciphertext_range = buffer_len - record.payload.ciphertext.len()..buffer_len;
                     wire::decrypt_record(
                         crypto,
                         &header,
                         &session_header,
-                        wire::EncryptedMessage {
-                            auth,
-                            ciphertext: &mut buffer[ciphertext_range.clone()],
-                        },
+                        record.payload,
                         &conn.transport.rx_key,
                     )
                     .map_err(|error| ReceiveError::wire(ReceiveStage::SessionPayload, error))?;

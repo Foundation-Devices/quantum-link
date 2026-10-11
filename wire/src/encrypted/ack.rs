@@ -147,7 +147,9 @@ impl Encode for RecordAck {
 }
 
 impl ql_codec::DecodeValue for RecordAck {
-    fn decode_value(reader: &mut ql_codec::Reader<'_>) -> Result<Self, Error> {
+    fn decode_value<B: ql_codec::ByteSlice>(
+        reader: &mut ql_codec::Reader<B>,
+    ) -> Result<Self, Error> {
         let largest_acked = reader.decode()?;
         let block_count = *reader.decode::<Varint<u32>>()? as usize;
         let first_range_len = reader.decode()?;

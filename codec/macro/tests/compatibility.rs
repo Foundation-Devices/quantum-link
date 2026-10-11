@@ -151,8 +151,8 @@ fn image_shape() -> Shape {
     )
 }
 
-/// Decodes both forms, which the derive generates separately
-fn decode<T: Decode + Debug + PartialEq>(bytes: &[u8]) -> T {
+/// decodes both forms
+fn decode<'a, T: Decode<&'a [u8]> + Debug + PartialEq>(bytes: &'a [u8]) -> T {
     let owned = T::decode_bytes(bytes).unwrap();
     assert_eq!(T::from_ref(T::decode_bytes_ref(bytes).unwrap()), owned);
     owned
@@ -216,19 +216,19 @@ fn old_decoder_skips_new_fields_and_variants() {
 fn undecodable_encodings() {
     // An enumerator past the known ones needs an unknown variant to land in.
     assert_eq!(
-        ChargeState::decode_bytes(&[2, 0]),
+        ChargeState::decode_bytes(&[2, 0][..]),
         Err(Error::InvalidDiscriminant)
     );
     assert_eq!(
-        PixelFormat::decode_bytes(&[9]),
+        PixelFormat::decode_bytes(&[9][..]),
         Err(Error::InvalidDiscriminant)
     );
     // Only fields with a missing value can be left out.
-    assert_eq!(Process::decode_bytes(&[0]), Err(Error::UnexpectedEof));
+    assert_eq!(Process::decode_bytes(&[0][..]), Err(Error::UnexpectedEof));
     // A struct may end between fields, not inside one, even if the bytes after it would complete
     // the field.
     assert_eq!(
-        v1::DeviceInfo::decode_bytes(&[2, 5, b'k', b'b', b'x', b'y', b'z', 80]),
+        v1::DeviceInfo::decode_bytes(&[2, 5, b'k', b'b', b'x', b'y', b'z', 80][..]),
         Err(Error::UnexpectedEof)
     );
     assert_eq!(

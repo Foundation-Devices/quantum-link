@@ -5,7 +5,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use ql_codec::{Codec, Decode, Encode};
+use ql_codec::{Codec, Decode, Encode, Reader, Ref};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Codec)]
 #[codec(frozen)]
@@ -77,9 +77,9 @@ pub struct IconSet(pub BTreeMap<String, Vec<u8>>);
 
 #[derive(Debug, Clone, PartialEq, Eq, Codec)]
 #[codec(frozen)]
-pub struct Envelope<T> {
+pub struct Envelope<B> {
     pub cid: u32,
-    pub message: T,
+    pub message: B,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Codec)]
@@ -132,29 +132,39 @@ fn installed_app() -> InstalledApp {
     }
 }
 
-fn roundtrip<T: Encode + Decode + Debug + PartialEq>(value: &T) {
-    let bytes = value.encode_vec();
-    assert_eq!(T::decode_bytes(&bytes).unwrap(), *value);
+fn roundtrip<T>(value: &T)
+where
+    T: Encode + Debug + PartialEq,
+    for<'a> T: Decode<&'a [u8]> + Decode<&'a mut [u8]>,
+{
+    let mut bytes = value.encode_vec();
+    assert_eq!(T::decode_bytes(bytes.as_slice()).unwrap(), *value);
+    let mut reader = Reader::new(bytes.as_mut_slice());
+    assert_eq!(T::decode(&mut reader).unwrap(), *value);
+    assert!(reader.is_empty());
 }
 
 #[test]
 fn borrowed_form_points_into_the_encoding() {
     let app = installed_app();
     let bytes = app.encode_vec();
-    let decoded = InstalledApp::decode_bytes_ref(&bytes).unwrap();
+    let decoded = InstalledApp::decode_bytes_ref(bytes.as_slice()).unwrap();
 
     let within = |slice: &[u8]| bytes.as_ptr_range().contains(&slice.as_ptr());
-    let app_id: &[u8; 16] = decoded.app_id.0;
-    let icon: &[u8] = decoded.icon;
-    let name: &str = decoded.name;
-    let signatures: &[&[u8]] = &decoded.signatures;
-    let keywords: &[&str] = &decoded.keywords;
+    let app_id: &[u8; 16] = &decoded.app_id.0;
+    let icon: &[u8] = &decoded.icon;
+    let name: &str = &decoded.name;
+    let signatures: &[Ref<&[u8], [u8]>] = &decoded.signatures;
+    let keywords: &[Ref<&[u8], str>] = &decoded.keywords;
     assert!(within(app_id));
     assert!(within(icon));
     assert!(within(name.as_bytes()));
-    assert!(within(signatures[0]));
+    assert!(within(&signatures[0]));
     assert!(within(keywords[0].as_bytes()));
-    assert_eq!(decoded.permissions[2], PermissionRef::Custom("dev"));
+    assert_eq!(
+        decoded.permissions[2],
+        PermissionRef::Custom(Ref::new(&b"dev"[..]).unwrap())
+    );
 
     assert_eq!(decoded.encode_vec(), bytes);
     assert_eq!(InstalledApp::from(decoded), app);
@@ -164,8 +174,8 @@ fn borrowed_form_points_into_the_encoding() {
 fn borrowed_form_encodes_like_the_owned_one() {
     let data = [0x5a; 300];
     let write = WriteFileRef {
-        path: "notes.txt",
-        data: &data,
+        path: Ref::new(&b"notes.txt"[..]).unwrap(),
+        data: Ref::new(data.as_slice()).unwrap(),
         location: Location::AppData,
     };
     let bytes = write.encode_vec();
@@ -176,7 +186,7 @@ fn borrowed_form_encodes_like_the_owned_one() {
         location: Location::AppData,
     };
     assert_eq!(bytes, owned.encode_vec());
-    assert_eq!(WriteFile::decode_bytes(&bytes).unwrap(), owned);
+    assert_eq!(WriteFile::decode_bytes(bytes.as_slice()).unwrap(), owned);
 }
 
 #[test]
@@ -213,8 +223,8 @@ fn maps_roundtrip() {
     roundtrip(&IconSet(BTreeMap::new()));
 
     let bytes = icons.encode_vec();
-    let borrowed = IconSet::decode_bytes_ref(&bytes).unwrap();
-    assert_eq!(borrowed.0["wallet"], [1, 2, 3]);
+    let borrowed = IconSet::decode_bytes_ref(bytes.as_slice()).unwrap();
+    assert_eq!(*borrowed.0["wallet"], [1, 2, 3]);
     assert_eq!(borrowed.encode_vec(), bytes);
 }
 
@@ -230,7 +240,7 @@ fn generic_types_roundtrip() {
     };
     roundtrip(&envelope);
     let bytes = envelope.encode_vec();
-    let borrowed = Envelope::<WriteFile>::decode_bytes_ref(&bytes).unwrap();
+    let borrowed = Envelope::<WriteFile>::decode_bytes_ref(bytes.as_slice()).unwrap();
     assert_eq!(borrowed.message.path, "notes.txt");
     assert_eq!(borrowed.encode_vec(), bytes);
     assert_eq!(borrowed.into_owned(), envelope);

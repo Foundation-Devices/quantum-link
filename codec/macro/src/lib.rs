@@ -2,8 +2,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{parse_macro_input, parse_quote};
 
-/// Implements `ql_codec::Encode` and `ql_codec::Decode`, generating `<Name>Ref` as the borrowed
-/// form unless the type has no fields
+/// implements the codec traits and generates `<Name>Ref<B>` unless the type has no fields
 ///
 /// See the `ql_codec` crate docs for the encoding and the `#[codec(...)]` attributes.
 #[proc_macro_derive(Codec, attributes(codec))]
@@ -14,7 +13,7 @@ pub fn derive_codec_entry(item: proc_macro::TokenStream) -> proc_macro::TokenStr
 }
 
 fn derive_codec(item: syn::DeriveInput) -> Result<TokenStream, syn::Error> {
-    // The borrowed form already takes `'a`, and borrowing from two places isn't worth it.
+    // borrowed fields are parameterized by their input container
     if let Some(lifetime) = item.generics.lifetimes().next() {
         return Err(syn::Error::new_spanned(
             lifetime,
@@ -22,7 +21,15 @@ fn derive_codec(item: syn::DeriveInput) -> Result<TokenStream, syn::Error> {
         ));
     }
     let options = Options::parse(&item.attrs)?;
-    let ref_generics = ref_generics(&item);
+    let mut input = format_ident!("B");
+    while item.generics.params.iter().any(|param| match param {
+        syn::GenericParam::Type(param) => param.ident == input,
+        syn::GenericParam::Const(param) => param.ident == input,
+        syn::GenericParam::Lifetime(_) => false,
+    }) {
+        input = format_ident!("{input}_");
+    }
+    let ref_generics = ref_generics(&item, &input);
     let expansion = match &item.data {
         syn::Data::Struct(_) if options.discriminants.is_some() => {
             return Err(syn::Error::new_spanned(
@@ -33,9 +40,9 @@ fn derive_codec(item: syn::DeriveInput) -> Result<TokenStream, syn::Error> {
         syn::Data::Struct(data) => derive_struct(
             &item,
             &ref_generics,
-            Fields::new(&data.fields, options.frozen)?,
+            Fields::new(&data.fields, options.frozen, &input)?,
         ),
-        syn::Data::Enum(data) => derive_enum(&item, &ref_generics, data, &options)?,
+        syn::Data::Enum(data) => derive_enum(&item, &ref_generics, data, &options, &input)?,
         syn::Data::Union(_) => {
             return Err(syn::Error::new_spanned(
                 &item.ident,
@@ -43,7 +50,13 @@ fn derive_codec(item: syn::DeriveInput) -> Result<TokenStream, syn::Error> {
             ))
         }
     };
-    Ok(expand(&item, &ref_generics, &options.derives, expansion))
+    Ok(expand(
+        &item,
+        &ref_generics,
+        &options.derives,
+        &input,
+        expansion,
+    ))
 }
 
 #[derive(Default)]
@@ -80,15 +93,13 @@ impl Options {
 
 /// The parts that differ between structs and enums
 struct Expansion {
-    /// Declaration of the borrowed form, if the type has fields to borrow
-    ///
-    /// A struct or enum without fields is its own borrowed form instead, because a
-    /// `<Name>Ref<'a>` with no field using `'a` doesn't compile.
+    /// declaration of the borrowed form when the type has fields
     ref_declaration: Option<TokenStream>,
     decode_ref: TokenStream,
     from_ref: TokenStream,
     decode: TokenStream,
     missing: TokenStream,
+    missing_owned: TokenStream,
     encoded_len: TokenStream,
     encode: TokenStream,
     /// The discriminants enum and its accessor, if requested
@@ -116,6 +127,7 @@ fn expand(
     item: &syn::DeriveInput,
     ref_generics: &syn::Generics,
     derives: &[syn::Path],
+    input: &syn::Ident,
     expansion: Expansion,
 ) -> TokenStream {
     let Expansion {
@@ -124,17 +136,16 @@ fn expand(
         from_ref,
         decode,
         missing,
+        missing_owned,
         encoded_len,
         encode,
         discriminants,
     } = expansion;
     let ident = &item.ident;
     let ref_ident = ref_ident(ident);
-    let (impl_generics, ty_generics, _) = item.generics.split_for_impl();
-    // Decoding needs the same bounds as declaring the borrowed form.
-    let (ref_impl_generics, ref_ty_generics, decode_bounds) = ref_generics.split_for_impl();
+    let (_, ty_generics, _) = item.generics.split_for_impl();
+    let (ref_impl_generics, ref_ty_generics, ref_bounds) = ref_generics.split_for_impl();
 
-    // Both forms bind their fields through `Self`, so they share the encoding.
     let encode_impl = |generics: syn::Generics, ty: TokenStream| {
         let (impl_generics, _, where_clause) = generics.split_for_impl();
         quote!(
@@ -164,14 +175,13 @@ fn expand(
     );
     let (ref_items, ref_type) = match ref_declaration {
         Some(ref_declaration) => {
-            let doc =
-                format!("[`{ident}`] with byte buffers and strings borrowed from the encoding");
+            let doc = format!("[`{ident}`] with fields borrowed from its input container");
             let derives = (!derives.is_empty()).then(|| quote!(#[derive(#(#derives),*)]));
             let ref_encode = encode_impl(
                 with_field_bounds(
                     ref_generics,
                     item,
-                    |ty| parse_quote!(<#ty as ::ql_codec::Decode>::Ref<'a>: ::ql_codec::Encode),
+                    |ty| parse_quote!(<#ty as ::ql_codec::Decode<#input>>::Ref: ::ql_codec::Encode),
                 ),
                 quote!(#ref_ident #ref_ty_generics),
             );
@@ -180,8 +190,8 @@ fn expand(
                 #derives
                 #ref_declaration
 
-                impl #ref_impl_generics #ref_ident #ref_ty_generics #decode_bounds {
-                    /// Copies the borrowed data into the owned type
+                impl #ref_impl_generics #ref_ident #ref_ty_generics #ref_bounds {
+                    /// copies borrowed data into the owned type
                     #[allow(dead_code)]
                     #[inline]
                     pub fn into_owned(self) -> #ident #ty_generics {
@@ -191,11 +201,11 @@ fn expand(
 
                 #[automatically_derived]
                 impl #ref_impl_generics ::core::convert::From<#ref_ident #ref_ty_generics>
-                    for #ident #ty_generics #decode_bounds
+                    for #ident #ty_generics #ref_bounds
                 {
                     #[inline]
                     fn from(value: #ref_ident #ref_ty_generics) -> Self {
-                        <Self as ::ql_codec::Decode>::from_ref(value)
+                        <Self as ::ql_codec::Decode<#input>>::from_ref(value)
                     }
                 }
 
@@ -211,30 +221,34 @@ fn expand(
         #discriminants
 
         #[automatically_derived]
-        impl #impl_generics ::ql_codec::Decode for #ident #ty_generics #decode_bounds {
-            type Ref<'a> = #ref_type;
+        impl #ref_impl_generics ::ql_codec::Decode<#input> for #ident #ty_generics #ref_bounds {
+            type Ref = #ref_type;
 
             #[inline]
-            fn decode_ref<'a>(
-                reader: &mut ::ql_codec::Reader<'a>,
-            ) -> ::core::result::Result<Self::Ref<'a>, ::ql_codec::Error> {
-                #decode_ref
-            }
-
-            #[inline]
-            fn from_ref(value: Self::Ref<'_>) -> Self {
-                #from_ref
-            }
-
-            #[inline]
-            fn decode(
-                reader: &mut ::ql_codec::Reader<'_>,
-            ) -> ::core::result::Result<Self, ::ql_codec::Error> {
+            fn decode(reader: &mut ::ql_codec::Reader<#input>)
+                -> ::core::result::Result<Self, ::ql_codec::Error>
+            {
                 #decode
             }
 
             #[inline]
-            fn missing<'a>() -> ::core::option::Option<Self::Ref<'a>> {
+            fn decode_ref(reader: &mut ::ql_codec::Reader<#input>)
+                -> ::core::result::Result<Self::Ref, ::ql_codec::Error>
+            {
+                #decode_ref
+            }
+
+            #[inline]
+            fn from_ref(value: Self::Ref) -> Self {
+                #from_ref
+            }
+
+            fn missing() -> ::core::option::Option<Self> {
+                #missing_owned
+            }
+
+            #[inline]
+            fn missing_ref() -> ::core::option::Option<Self::Ref> {
                 #missing
             }
         }
@@ -270,11 +284,12 @@ fn derive_struct(
     let owned = fields.owned(&quote!(Self));
 
     Expansion {
-        ref_declaration: (!fields.fields.is_empty()).then_some(ref_declaration),
+        ref_declaration: (!fields.shape.is_empty()).then_some(ref_declaration),
         decode_ref: decode(Form::Borrowed),
         from_ref: quote!(let Self::Ref #pattern = value; #owned),
         decode: decode(Form::Owned),
-        missing: fields.missing(&quote!(Self::Ref)),
+        missing: fields.missing(Form::Borrowed),
+        missing_owned: fields.missing(Form::Owned),
         encoded_len: quote!(let Self #pattern = self; #encoded_len),
         encode: quote!(let Self #pattern = self; #encode),
         discriminants: quote!(),
@@ -293,6 +308,7 @@ fn derive_enum(
     ref_generics: &syn::Generics,
     data: &syn::DataEnum,
     options: &Options,
+    input: &syn::Ident,
 ) -> Result<Expansion, syn::Error> {
     let frozen = options.frozen;
     let vis = &item.vis;
@@ -335,13 +351,13 @@ fn derive_enum(
             ident: &variant.ident,
             attrs: &variant.attrs,
             enumerator,
-            fields: Fields::new(&variant.fields, frozen)?,
+            fields: Fields::new(&variant.fields, frozen, input)?,
         });
     }
 
     let borrows = variants
         .iter()
-        .any(|variant| !variant.fields.fields.is_empty());
+        .any(|variant| !variant.fields.shape.is_empty());
 
     let encoded_len_arms = variants.iter().map(|variant| {
         let Variant {
@@ -464,6 +480,10 @@ fn derive_enum(
             Some(unknown) => quote!(::core::option::Option::Some(Self::Ref::#unknown {})),
             None => quote!(::core::option::Option::None),
         },
+        missing_owned: match unknown {
+            Some(unknown) => quote!(::core::option::Option::Some(Self::#unknown {})),
+            None => quote!(::core::option::Option::None),
+        },
         encoded_len: quote!(match #scrutinee { #(#encoded_len_arms)* }),
         encode: quote!(match #scrutinee { #(#encode_arms)* }),
         discriminants: discriminants.unwrap_or_default(),
@@ -472,66 +492,48 @@ fn derive_enum(
 
 struct Fields<'a> {
     shape: &'a syn::Fields,
-    fields: Vec<Field<'a>>,
     frozen: bool,
-}
-
-struct Field<'a> {
-    attrs: &'a [syn::Attribute],
-    vis: &'a syn::Visibility,
-    member: syn::Member,
-    binding: syn::Ident,
-    ty: &'a syn::Type,
+    input: &'a syn::Ident,
 }
 
 impl<'a> Fields<'a> {
-    fn new(shape: &'a syn::Fields, frozen: bool) -> Result<Self, syn::Error> {
-        let fields = shape
+    fn new(
+        shape: &'a syn::Fields,
+        frozen: bool,
+        input: &'a syn::Ident,
+    ) -> Result<Self, syn::Error> {
+        if let Some(attr) = shape
             .iter()
-            .enumerate()
-            .map(|(index, field)| {
-                if let Some(attr) = field
-                    .attrs
-                    .iter()
-                    .find(|attr| attr.path().is_ident("codec"))
-                {
-                    return Err(syn::Error::new_spanned(
-                        attr,
-                        "Fields take no codec attributes",
-                    ));
-                }
-                Ok(Field {
-                    attrs: &field.attrs,
-                    vis: &field.vis,
-                    member: field
-                        .ident
-                        .clone()
-                        .map_or_else(|| syn::Member::Unnamed(index.into()), syn::Member::Named),
-                    binding: format_ident!("field_{index}"),
-                    ty: &field.ty,
-                })
-            })
-            .collect::<Result<_, _>>()?;
+            .flat_map(|field| &field.attrs)
+            .find(|attr| attr.path().is_ident("codec"))
+        {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "Fields take no codec attributes",
+            ));
+        }
         Ok(Self {
             shape,
-            fields,
             frozen,
+            input,
         })
     }
 
-    /// `{ a: field_0, 1: field_1 }`, which also matches tuple and unit shapes
+    /// `{ a: field_0, 1: field_1 }` also matches tuple and unit shapes
     fn pattern(&self) -> TokenStream {
-        let fields = self.fields.iter().map(|field| {
-            let Field {
-                member, binding, ..
-            } = field;
-            let cfg = cfg_attrs(field.attrs);
+        let fields = self.shape.iter().enumerate().map(|(index, field)| {
+            let member = field
+                .ident
+                .clone()
+                .map_or_else(|| syn::Member::Unnamed(index.into()), syn::Member::Named);
+            let binding = format_ident!("field_{index}");
+            let cfg = cfg_attrs(&field.attrs);
             quote!(#(#cfg)* #member: #binding,)
         });
         quote!({ #(#fields)* })
     }
 
-    /// Length of the fields bound by [`Self::pattern`]
+    /// length of the fields bound by [`Self::pattern`]
     fn encoded_len(&self) -> TokenStream {
         let fields_len = self.fields_len();
         if self.frozen {
@@ -541,11 +543,11 @@ impl<'a> Fields<'a> {
         }
     }
 
-    /// Encodes the fields bound by [`Self::pattern`] into `out`
+    /// encodes the fields bound by [`Self::pattern`] into `out`
     fn encode(&self) -> TokenStream {
-        let fields = self.fields.iter().map(|field| {
-            let binding = &field.binding;
-            let cfg = cfg_attrs(field.attrs);
+        let fields = self.shape.iter().enumerate().map(|(index, field)| {
+            let binding = format_ident!("field_{index}");
+            let cfg = cfg_attrs(&field.attrs);
             quote!(#(#cfg)* ::ql_codec::Encode::encode(#binding, out);)
         });
         let len = (!self.frozen).then(|| {
@@ -556,9 +558,9 @@ impl<'a> Fields<'a> {
     }
 
     fn fields_len(&self) -> TokenStream {
-        let fields = self.fields.iter().map(|field| {
-            let binding = &field.binding;
-            let cfg = cfg_attrs(field.attrs);
+        let fields = self.shape.iter().enumerate().map(|(index, field)| {
+            let binding = format_ident!("field_{index}");
+            let cfg = cfg_attrs(&field.attrs);
             quote!(#(#cfg)* { len += ::ql_codec::Encode::encoded_len(#binding); })
         });
         quote!({
@@ -570,58 +572,70 @@ impl<'a> Fields<'a> {
     }
 
     fn decode(&self, path: &TokenStream, form: Form) -> TokenStream {
-        self.construct(path, |ty| match (self.frozen, form) {
-            (true, Form::Owned) => quote!(<#ty as ::ql_codec::Decode>::decode(reader)?),
-            (true, Form::Borrowed) => quote!(<#ty as ::ql_codec::Decode>::decode_ref(reader)?),
-            (false, Form::Owned) => quote!(::ql_codec::decode_field::<#ty>(&mut fields)?),
-            (false, Form::Borrowed) => quote!(::ql_codec::decode_field_ref::<#ty>(&mut fields)?),
+        let input = self.input;
+        self.construct(path, |field, _| {
+            let ty = &field.ty;
+            match (self.frozen, form) {
+                (true, Form::Owned) => quote!(<#ty as ::ql_codec::Decode<#input>>::decode(reader)?),
+                (true, Form::Borrowed) => {
+                    quote!(<#ty as ::ql_codec::Decode<#input>>::decode_ref(reader)?)
+                }
+                (false, Form::Owned) => quote!(::ql_codec::decode_field::<#ty, _>(&mut fields)?),
+                (false, Form::Borrowed) => {
+                    quote!(::ql_codec::decode_field_ref::<#ty, _>(&mut fields)?)
+                }
+            }
         })
     }
 
-    fn missing(&self, path: &TokenStream) -> TokenStream {
-        let value = self.construct(path, |ty| quote!(<#ty as ::ql_codec::Decode>::missing()?));
+    fn missing(&self, form: Form) -> TokenStream {
+        let input = self.input;
+        let value = self.construct(&form.path(), |field, _| {
+            let ty = &field.ty;
+            match form {
+                Form::Owned => quote!(<#ty as ::ql_codec::Decode<#input>>::missing()?),
+                Form::Borrowed => quote!(<#ty as ::ql_codec::Decode<#input>>::missing_ref()?),
+            }
+        });
         quote!(::core::option::Option::Some(#value))
     }
 
-    /// Builds the owned value from the borrowed fields bound by [`Self::pattern`]
+    /// builds the owned value from the borrowed fields bound by [`Self::pattern`]
     fn owned(&self, path: &TokenStream) -> TokenStream {
-        let fields = self.fields.iter().map(|field| {
-            let Field {
-                member,
-                binding,
-                ty,
-                ..
-            } = field;
-            let cfg = cfg_attrs(field.attrs);
-            quote!(#(#cfg)* #member: <#ty as ::ql_codec::Decode>::from_ref(#binding),)
-        });
-        quote!(#path { #(#fields)* })
+        let input = self.input;
+        self.construct(path, |field, index| {
+            let ty = &field.ty;
+            let binding = format_ident!("field_{index}");
+            quote!(<#ty as ::ql_codec::Decode<#input>>::from_ref(#binding))
+        })
     }
 
     fn construct(
         &self,
         path: &TokenStream,
-        value: impl Fn(&syn::Type) -> TokenStream,
+        value: impl Fn(&syn::Field, usize) -> TokenStream,
     ) -> TokenStream {
-        let fields = self.fields.iter().map(|field| {
-            let member = &field.member;
-            let cfg = cfg_attrs(field.attrs);
-            let value = value(field.ty);
+        let fields = self.shape.iter().enumerate().map(|(index, field)| {
+            let member = field
+                .ident
+                .clone()
+                .map_or_else(|| syn::Member::Unnamed(index.into()), syn::Member::Named);
+            let cfg = cfg_attrs(&field.attrs);
+            let value = value(field, index);
             quote!(#(#cfg)* #member: #value,)
         });
         quote!(#path { #(#fields)* })
     }
 
-    /// The fields of the borrowed form, in the declared shape
+    /// the fields of the borrowed form in the declared shape
     fn ref_shape(&self) -> TokenStream {
-        let fields = self.fields.iter().map(|field| {
-            let Field { vis, ty, .. } = field;
-            let attrs = ref_attrs(field.attrs);
-            let name = match &field.member {
-                syn::Member::Named(ident) => quote!(#ident:),
-                syn::Member::Unnamed(_) => quote!(),
-            };
-            quote!(#(#attrs)* #vis #name <#ty as ::ql_codec::Decode>::Ref<'a>,)
+        let input = self.input;
+        let fields = self.shape.iter().map(|field| {
+            let vis = &field.vis;
+            let ty = &field.ty;
+            let attrs = ref_attrs(&field.attrs);
+            let name = field.ident.as_ref().map(|name| quote!(#name:));
+            quote!(#(#attrs)* #vis #name <#ty as ::ql_codec::Decode<#input>>::Ref,)
         });
         match self.shape {
             syn::Fields::Named(_) => quote!({ #(#fields)* }),
@@ -676,51 +690,55 @@ fn ref_ident(ident: &syn::Ident) -> syn::Ident {
     format_ident!("{ident}Ref")
 }
 
-/// The borrowed form's generics: `'a` for the encoding, then the type's own
-fn ref_generics(item: &syn::DeriveInput) -> syn::Generics {
+/// the input container followed by the type's own generics
+fn ref_generics(item: &syn::DeriveInput, input: &syn::Ident) -> syn::Generics {
     let mut generics = item.generics.clone();
-    generics.params.insert(0, parse_quote!('a));
-    // The fields are `<T as Decode>::Ref<'a>`, which only exist for a decodable `T`.
-    with_field_bounds(&generics, item, |ty| parse_quote!(#ty: ::ql_codec::Decode))
+    generics
+        .params
+        .insert(0, parse_quote!(#input: ::ql_codec::ByteSlice));
+    if item.generics.type_params().next().is_none() {
+        return generics;
+    }
+    with_field_bounds(
+        &generics,
+        item,
+        |ty| parse_quote!(#ty: ::ql_codec::Decode<#input>),
+    )
 }
 
-/// `generics` with `bound` on each field type, if `item` is generic
-///
-/// A non-generic type needs no bounds, its field types are checked as they are.
+/// `generics` with `bound` on each field type when it has type parameters
 fn with_field_bounds(
     generics: &syn::Generics,
     item: &syn::DeriveInput,
     bound: impl Fn(&syn::Type) -> syn::WherePredicate,
 ) -> syn::Generics {
     let mut generics = generics.clone();
-    if item.generics.type_params().next().is_none() {
+    if generics.type_params().next().is_none() {
         return generics;
     }
-    let fields: Vec<&syn::Field> = match &item.data {
-        syn::Data::Struct(data) => data.fields.iter().collect(),
-        syn::Data::Enum(data) => data
-            .variants
-            .iter()
-            .flat_map(|variant| &variant.fields)
-            .collect(),
-        syn::Data::Union(_) => Vec::new(),
-    };
     let predicates = &mut generics.make_where_clause().predicates;
-    predicates.extend(fields.iter().map(|field| bound(&field.ty)));
+    match &item.data {
+        syn::Data::Struct(data) => {
+            predicates.extend(data.fields.iter().map(|field| bound(&field.ty)))
+        }
+        syn::Data::Enum(data) => predicates.extend(
+            data.variants
+                .iter()
+                .flat_map(|variant| &variant.fields)
+                .map(|field| bound(&field.ty)),
+        ),
+        syn::Data::Union(_) => {}
+    }
     generics
 }
 
-fn cfg_attrs(attrs: &[syn::Attribute]) -> Vec<&syn::Attribute> {
-    attrs
-        .iter()
-        .filter(|attr| attr.path().is_ident("cfg"))
-        .collect()
+fn cfg_attrs(attrs: &[syn::Attribute]) -> impl Iterator<Item = &syn::Attribute> {
+    attrs.iter().filter(|attr| attr.path().is_ident("cfg"))
 }
 
 /// Attributes carried over to the borrowed form
-fn ref_attrs(attrs: &[syn::Attribute]) -> Vec<&syn::Attribute> {
+fn ref_attrs(attrs: &[syn::Attribute]) -> impl Iterator<Item = &syn::Attribute> {
     attrs
         .iter()
         .filter(|attr| attr.path().is_ident("cfg") || attr.path().is_ident("doc"))
-        .collect()
 }
