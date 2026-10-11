@@ -1,5 +1,5 @@
 use bytes::Buf;
-use ql_codec::{encode_bytes_raw, BufView, Decode, Encode, Reader};
+use ql_codec::{encode_bytes_raw, BufView, ByteSlice, Decode, Encode, Reader};
 
 use crate::ENCRYPTED_MESSAGE_AUTH_SIZE;
 
@@ -19,16 +19,16 @@ impl<B: AsRef<[u8]>> EncryptedMessage<B> {
 }
 
 impl Decode for EncryptedMessage<Vec<u8>> {
-    type Ref<'a> = EncryptedMessage<&'a [u8]>;
+    type Ref<B: ByteSlice> = EncryptedMessage<B>;
 
-    fn decode_ref<'a>(reader: &mut Reader<'a>) -> Result<Self::Ref<'a>, ql_codec::Error> {
+    fn decode_ref<B: ByteSlice>(reader: &mut Reader<B>) -> Result<Self::Ref<B>, ql_codec::Error> {
         Ok(EncryptedMessage {
             auth: reader.decode()?,
             ciphertext: reader.take_all(),
         })
     }
 
-    fn from_ref(value: Self::Ref<'_>) -> Self {
+    fn from_ref<B: ByteSlice>(value: Self::Ref<B>) -> Self {
         value.into_owned()
     }
 }

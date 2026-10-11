@@ -37,6 +37,7 @@ use std::{
 };
 
 pub use bytes::Bytes;
+use bytes::BytesMut;
 pub use error::*;
 pub use pairing::PairingInvite;
 use ql_common::{ResetCode, StreamId, QID};
@@ -269,19 +270,16 @@ impl<M: StreamMeta> QlFsm<M> {
 
     /// handles one inbound wire message and returns whether it was processed rather than ignored
     ///
-    /// `bytes` must show the same bytes through `as_ref()` and `as_mut()`. It's kept as the
-    /// backing store of the stream data it carries, so nothing is copied.
-    pub fn receive<B>(
+    /// `bytes` is decrypted in place and kept as the backing store of the stream data it carries.
+    /// Nothing is copied, unless something else still references its buffer.
+    pub fn receive(
         &mut self,
         now: Instant,
-        bytes: B,
+        bytes: impl Into<Bytes>,
         crypto: &impl QlCrypto,
-    ) -> Result<bool, ReceiveError>
-    where
-        B: AsRef<[u8]> + AsMut<[u8]> + Send + 'static,
-    {
+    ) -> Result<bool, ReceiveError> {
         self.state.now = now;
-        fsm::receive(self, bytes, crypto)
+        fsm::receive(self, BytesMut::from(bytes.into()), crypto)
     }
 
     /// returns the next queued event, if any

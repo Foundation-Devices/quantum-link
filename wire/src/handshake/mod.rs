@@ -66,8 +66,10 @@ impl Encode for EncryptedPeerBundle {
 }
 
 impl ql_codec::DecodeValue for EncryptedPeerBundle {
-    fn decode_value(reader: &mut ql_codec::Reader<'_>) -> Result<Self, ql_codec::Error> {
-        Ok(Self(Box::from(reader.take_all())))
+    fn decode_value<B: ql_codec::ByteSlice>(
+        reader: &mut ql_codec::Reader<B>,
+    ) -> Result<Self, ql_codec::Error> {
+        Ok(Self(Box::from(&*reader.take_all())))
     }
 }
 

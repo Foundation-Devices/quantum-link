@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, time::Instant};
 
-use bytes::Bytes;
+use bytes::BytesMut;
 use ql_codec::{Decode, Reader};
 use ql_common::StreamId;
 use ql_wire::{self as wire, QlCrypto, SessionCloseCode};
@@ -91,16 +91,12 @@ pub fn handle_connect_kk<M: StreamMeta>(
     handshake::handle_connect_kk(fsm, crypto)
 }
 
-pub fn receive<M: StreamMeta, B>(
+pub fn receive<M: StreamMeta>(
     fsm: &mut QlFsm<M>,
-    mut bytes: B,
+    bytes: BytesMut,
     crypto: &impl QlCrypto,
-) -> Result<bool, ReceiveError>
-where
-    B: AsRef<[u8]> + AsMut<[u8]> + Send + 'static,
-{
-    let buffer = bytes.as_mut();
-    let mut reader = Reader::new(buffer);
+) -> Result<bool, ReceiveError> {
+    let mut reader = Reader::new(bytes);
     let header = wire::RecordHeader::decode(&mut reader)
         .map_err(|error| ReceiveError::wire(ReceiveStage::RecordHeader, error))?;
 
@@ -124,39 +120,25 @@ where
                 if header.route.sender != conn.transport.remote_qid {
                     return Err(ReceiveError::InvalidQid);
                 }
-                let (decrypted, seq) = {
-                    // This decodes a borrowed `QlSessionRecord<&[u8]>`, without copying.
+                let (plaintext, seq) = {
+                    // This decodes a `QlSessionRecord<BytesMut>`, to decrypt it in place.
                     // `Vec<u8>` is named because `Decode` is implemented on the owned form.
                     let record = wire::QlSessionRecord::<Vec<u8>>::decode_ref(&mut reader)
                         .map_err(|error| ReceiveError::wire(ReceiveStage::SessionRecord, error))?;
                     if conn.session.is_replay(record.header.seq) {
                         return Ok(false);
                     }
-                    let session_header = record.header;
-                    let auth = record.payload.auth;
-                    let ciphertext_address = record.payload.ciphertext.as_ptr() as usize;
-                    let ciphertext_len = record.payload.ciphertext.len();
-
-                    // XXX: The reader only lends shared slices, so the ciphertext is located in
-                    // `buffer` by its address, to decrypt it in place.
-                    let ciphertext_start = ciphertext_address - buffer.as_ptr() as usize;
-                    let ciphertext_range = ciphertext_start..ciphertext_start + ciphertext_len;
-                    wire::decrypt_record(
+                    let plaintext = wire::decrypt_record(
                         crypto,
                         &header,
-                        &session_header,
-                        wire::EncryptedMessage {
-                            auth,
-                            ciphertext: &mut buffer[ciphertext_range.clone()],
-                        },
+                        &record.header,
+                        record.payload,
                         &conn.transport.rx_key,
                     )
                     .map_err(|error| ReceiveError::wire(ReceiveStage::SessionPayload, error))?;
-                    (ciphertext_range, session_header.seq)
+                    (plaintext.freeze(), record.header.seq)
                 };
 
-                let bytes = Bytes::from_owner(bytes);
-                let plaintext = bytes.slice(decrypted);
                 let frames = wire::parse_session_frames(&plaintext);
 
                 let mut emit = EventSink::new(events);

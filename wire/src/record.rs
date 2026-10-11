@@ -1,4 +1,4 @@
-use ql_codec::{BufMut, BufView, Decode, Encode, Reader};
+use ql_codec::{BufMut, BufView, ByteSlice, Decode, Encode, Reader};
 use ql_common::QID;
 
 use crate::{
@@ -22,7 +22,7 @@ pub fn encode_record_vec<T: Encode + ?Sized>(header: RecordHeader, body: &T) -> 
     out
 }
 
-pub fn decode_record<T: Decode>(bytes: &[u8]) -> Result<(RecordHeader, T::Ref<'_>), Error> {
+pub fn decode_record<T: Decode>(bytes: &[u8]) -> Result<(RecordHeader, T::Ref<&[u8]>), Error> {
     let mut reader = Reader::new(bytes);
     Ok((reader.decode()?, reader.decode_ref::<T>()?))
 }
@@ -95,16 +95,16 @@ impl<B: BufView> Encode for QlSessionRecord<B> {
 }
 
 impl Decode for QlSessionRecord<Vec<u8>> {
-    type Ref<'a> = QlSessionRecord<&'a [u8]>;
+    type Ref<B: ByteSlice> = QlSessionRecord<B>;
 
-    fn decode_ref<'a>(reader: &mut Reader<'a>) -> Result<Self::Ref<'a>, ql_codec::Error> {
+    fn decode_ref<B: ByteSlice>(reader: &mut Reader<B>) -> Result<Self::Ref<B>, ql_codec::Error> {
         Ok(QlSessionRecord {
             header: reader.decode()?,
             payload: reader.decode_ref::<EncryptedMessage<Vec<u8>>>()?,
         })
     }
 
-    fn from_ref(value: Self::Ref<'_>) -> Self {
+    fn from_ref<B: ByteSlice>(value: Self::Ref<B>) -> Self {
         value.into_owned()
     }
 }

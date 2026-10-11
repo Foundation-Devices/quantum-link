@@ -2,7 +2,7 @@ use core::{fmt, ops::Deref};
 
 use bytes::BufMut;
 
-use crate::{DecodeValue, Element, Encode, Error, Reader};
+use crate::{ByteSlice, DecodeValue, Element, Encode, Error, Reader};
 
 /// An integer field carried as a varint
 ///
@@ -53,7 +53,7 @@ impl<T: Primitive> Encode for Varint<T> {
 }
 
 impl<T: Primitive> DecodeValue for Varint<T> {
-    fn decode_value(reader: &mut Reader<'_>) -> Result<Self, Error> {
+    fn decode_value<B: ByteSlice>(reader: &mut Reader<B>) -> Result<Self, Error> {
         self::decode(reader).map(Self)
     }
 
@@ -86,7 +86,7 @@ where
 }
 
 #[inline]
-pub fn decode<T: Primitive>(reader: &mut Reader<'_>) -> Result<T, Error> {
+pub fn decode<T: Primitive, B: ByteSlice>(reader: &mut Reader<B>) -> Result<T, Error> {
     let first = reader.take_u8()?;
     if first < 0x80 {
         return Ok(T::from_u8(first));
@@ -167,7 +167,7 @@ mod tests {
         T: Primitive + Debug + PartialEq,
     {
         let mut reader = Reader::new(bytes);
-        assert_eq!(decode::<T>(&mut reader), Err(error));
+        assert_eq!(decode::<T, _>(&mut reader), Err(error));
     }
 
     fn test_type<T>(max: T)

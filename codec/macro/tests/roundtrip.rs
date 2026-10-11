@@ -76,7 +76,7 @@ pub enum SeekFrom {
 pub struct IconSet(pub BTreeMap<String, Vec<u8>>);
 
 #[derive(Debug, Clone, PartialEq, Eq, Codec)]
-#[codec(frozen)]
+#[codec(frozen, derive(Debug, PartialEq))]
 pub struct Envelope<T> {
     pub cid: u32,
     pub message: T,
@@ -161,9 +161,54 @@ fn borrowed_form_points_into_the_encoding() {
 }
 
 #[test]
+fn mutable_form_changes_the_encoding_in_place() {
+    let app = installed_app();
+    let mut bytes = app.encode_vec();
+    let mut view = InstalledApp::decode_bytes_mut(&mut bytes).unwrap();
+    view.app_id.0[0] = b'W';
+    view.name.make_ascii_uppercase();
+    view.icon.reverse();
+    view.signatures[0].fill(0xbb);
+    view.keywords[0].make_ascii_uppercase();
+    if let PermissionRef::Custom(name) = &mut view.permissions[2] {
+        name.make_ascii_uppercase();
+    }
+
+    let mut expected = app;
+    expected.app_id.0[0] = b'W';
+    expected.name.make_ascii_uppercase();
+    expected.icon.reverse();
+    expected.signatures[0].fill(0xbb);
+    expected.keywords[0].make_ascii_uppercase();
+    expected.permissions[2] = Permission::Custom("DEV".into());
+    assert_eq!(InstalledApp::decode_bytes(&bytes).unwrap(), expected);
+}
+
+#[derive(Codec)]
+struct Short {
+    id: u32,
+}
+
+#[derive(Codec)]
+struct Long {
+    id: u32,
+    key: [u8; 4],
+}
+
+#[test]
+fn mutable_form_has_no_missing_fixed_array() {
+    let mut bytes = Short { id: 7 }.encode_vec();
+    assert_eq!(Long::decode_bytes_ref(&bytes).unwrap().key, &[0; 4]);
+    assert!(matches!(
+        Long::decode_bytes_mut(&mut bytes),
+        Err(ql_codec::Error::UnexpectedEof)
+    ));
+}
+
+#[test]
 fn borrowed_form_encodes_like_the_owned_one() {
     let data = [0x5a; 300];
-    let write = WriteFileRef {
+    let write = WriteFileRef::<&[u8]> {
         path: "notes.txt",
         data: &data,
         location: Location::AppData,
@@ -234,6 +279,19 @@ fn generic_types_roundtrip() {
     assert_eq!(borrowed.message.path, "notes.txt");
     assert_eq!(borrowed.encode_vec(), bytes);
     assert_eq!(borrowed.into_owned(), envelope);
+
+    let bytes = Envelope {
+        cid: 7,
+        message: Permission::Custom("dev".into()),
+    }
+    .encode_vec();
+    assert_eq!(
+        Envelope::<Permission>::decode_bytes_ref(&bytes).unwrap(),
+        EnvelopeRef::<&[u8], Permission> {
+            cid: 7,
+            message: PermissionRef::Custom("dev"),
+        }
+    );
 
     for reply in [
         Reply::Done(3u64),

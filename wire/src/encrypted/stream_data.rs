@@ -1,4 +1,6 @@
-use ql_codec::{encode_bytes, encoded_len_bytes, BufView, Decode, Encode, Error, Reader, Varint};
+use ql_codec::{
+    encode_bytes, encoded_len_bytes, BufView, ByteSlice, Decode, Encode, Error, Reader, Varint,
+};
 use ql_common::StreamId;
 
 /// carries bytes for a stream and may finish that sending direction
@@ -36,9 +38,9 @@ impl<B, H> StreamData<B, H> {
 }
 
 impl Decode for StreamData<Vec<u8>> {
-    type Ref<'a> = StreamData<&'a [u8]>;
+    type Ref<B: ByteSlice> = StreamData<B>;
 
-    fn decode_ref<'a>(reader: &mut Reader<'a>) -> Result<Self::Ref<'a>, Error> {
+    fn decode_ref<B: ByteSlice>(reader: &mut Reader<B>) -> Result<Self::Ref<B>, Error> {
         let stream_id = reader.decode()?;
         let offset = reader.decode()?;
         let flags = reader.take_u8()?;
@@ -64,7 +66,7 @@ impl Decode for StreamData<Vec<u8>> {
         })
     }
 
-    fn from_ref(value: Self::Ref<'_>) -> Self {
+    fn from_ref<B: ByteSlice>(value: Self::Ref<B>) -> Self {
         value.into_owned()
     }
 }
