@@ -47,7 +47,9 @@ impl Encode for Ik1 {
 }
 
 impl ql_codec::DecodeValue for Ik1 {
-    fn decode_value(reader: &mut ql_codec::Reader<'_>) -> Result<Self, ql_codec::Error> {
+    fn decode_value<B: ql_codec::ByteSlice>(
+        reader: &mut ql_codec::Reader<B>,
+    ) -> Result<Self, ql_codec::Error> {
         let handshake_id = reader.decode()?;
         let transport_params = reader.decode()?;
         let skem_ciphertext = reader.decode()?;

@@ -680,7 +680,7 @@ fn encrypted_session_record_round_trip_authenticates_header() {
     let record = encrypt_record(&crypto, session_route, header, &session_key, &body);
 
     let record_header = RecordHeader::new(session_route, RecordType::Session);
-    let bytes = encode_record_vec(record_header, &record);
+    let mut bytes = encode_record_vec(record_header, &record);
     assert_eq!(
         RecordHeader::decode_bytes(bytes.as_slice()).unwrap(),
         RecordHeader {
@@ -727,6 +727,28 @@ fn encrypted_session_record_round_trip_authenticates_header() {
             &session_key,
         ),
         Err(Error::DecryptFailed)
+    );
+
+    let payload_start =
+        record_header.encoded_len() + header.encoded_len() + ENCRYPTED_MESSAGE_AUTH_SIZE;
+    let ciphertext_ptr = bytes[payload_start..].as_ptr();
+    let mut reader = ql_codec::Reader::new(bytes.as_mut_slice());
+    let decoded_header = reader.decode::<RecordHeader>().unwrap();
+    let decoded = reader.decode_ref::<QlSessionRecord<Vec<u8>>>().unwrap();
+    assert!(reader.is_empty());
+    assert_eq!(decoded.payload.ciphertext.as_ptr(), ciphertext_ptr);
+    let plaintext = encrypted::decrypt_record(
+        &crypto,
+        &decoded_header,
+        &decoded.header,
+        decoded.payload,
+        &session_key,
+    )
+    .unwrap();
+    assert_eq!(decode_session_frames(plaintext).unwrap(), body);
+    assert_eq!(
+        decode_session_frames(&bytes[payload_start..]).unwrap(),
+        body
     );
 }
 

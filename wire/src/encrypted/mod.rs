@@ -34,7 +34,7 @@ pub enum SessionFrame<B> {
     Unpair = 7,
 }
 
-impl<'a> SessionFrameRef<'a, Vec<u8>> {
+impl<'a> SessionFrameRef<&'a [u8], Vec<u8>> {
     fn map_bytes<C>(self, f: impl FnMut(&'a [u8]) -> C) -> SessionFrame<C> {
         match self {
             Self::Ping => SessionFrame::Ping,
@@ -52,7 +52,7 @@ impl<'a> SessionFrameRef<'a, Vec<u8>> {
 pub fn parse_session_frames(bytes: &Bytes) -> SessionFrameIter<'_> {
     SessionFrameIter {
         bytes,
-        reader: Reader::new(bytes),
+        reader: Reader::new(bytes.as_ref()),
     }
 }
 
@@ -68,7 +68,7 @@ pub fn decode_session_frames(bytes: &[u8]) -> Result<Vec<SessionFrame<Vec<u8>>>,
 #[derive(Clone)]
 pub struct SessionFrameIter<'a> {
     bytes: &'a Bytes,
-    reader: Reader<'a>,
+    reader: Reader<&'a [u8]>,
 }
 
 impl Iterator for SessionFrameIter<'_> {

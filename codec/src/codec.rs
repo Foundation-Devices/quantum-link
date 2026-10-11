@@ -6,7 +6,7 @@ use std::{
 
 use bytes::{Buf, BufMut, Bytes};
 
-use crate::{varint, BufView, Decode, DecodeValue, Encode, Error, Reader};
+use crate::{varint, BufView, ByteSlice, Decode, DecodeValue, Encode, Error, Reader, Ref};
 
 macro_rules! impl_codec {
     (fixed_integer: $($ty:ty),* $(,)?) => {
@@ -24,8 +24,9 @@ macro_rules! impl_codec {
 
             impl DecodeValue for $ty {
                 #[inline]
-                fn decode_value(reader: &mut Reader<'_>) -> Result<Self, Error> {
-                    Ok(Self::from_le_bytes(*reader.take_array()?))
+                fn decode_value<B: ByteSlice>(reader: &mut Reader<B>) -> Result<Self, Error> {
+                    let bytes = reader.take_n(size_of::<Self>())?;
+                    Ok(Self::from_le_bytes((&*bytes).try_into().unwrap()))
                 }
 
                 #[inline]
@@ -48,22 +49,22 @@ macro_rules! impl_codec {
                 }
             }
 
-            impl Decode for $ty {
-                type Ref<'a> = &'a [u8];
+            impl <B: ByteSlice> Decode<B> for $ty {
+                type Ref = Ref<B, [u8]>;
 
                 #[inline]
-                fn decode_ref<'a>(reader: &mut Reader<'a>) -> Result<Self::Ref<'a>, Error> {
-                    reader.take_len_prefixed()
+                fn decode_ref(reader: &mut Reader<B>) -> Result<Self::Ref, Error> {
+                    Ref::new(reader.take_len_prefixed()?)
                 }
 
                 #[inline]
-                fn from_ref(value: &[u8]) -> Self {
-                    $from_ref(value)
+                fn from_ref(value: Self::Ref) -> Self {
+                    $from_ref(&*value)
                 }
 
                 #[inline]
-                fn missing<'a>() -> Option<Self::Ref<'a>> {
-                    Some(&[])
+                fn missing_ref() -> Option<Self::Ref> {
+                    Ref::new(B::empty()).ok()
                 }
             }
         )*
@@ -80,23 +81,27 @@ macro_rules! impl_codec {
                 }
             }
 
-            impl<$($name: Decode),+> Decode for ($($name,)+) {
-                type Ref<'a> = ($($name::Ref<'a>,)+);
+            impl <B: ByteSlice, $($name: Decode<B>),+> Decode<B> for ($($name,)+) {
+                type Ref = ($($name::Ref,)+);
 
-                fn decode_ref<'a>(reader: &mut Reader<'a>) -> Result<Self::Ref<'a>, Error> {
-                    Ok(($($name::decode_ref(reader)?,)+))
-                }
-
-                fn from_ref(value: Self::Ref<'_>) -> Self {
-                    ($($name::from_ref(value.$index),)+)
-                }
-
-                fn decode(reader: &mut Reader<'_>) -> Result<Self, Error> {
+                fn decode(reader: &mut Reader<B>) -> Result<Self, Error> {
                     Ok(($($name::decode(reader)?,)+))
                 }
 
-                fn missing<'a>() -> Option<Self::Ref<'a>> {
+                fn decode_ref(reader: &mut Reader<B>) -> Result<Self::Ref, Error> {
+                    Ok(($($name::decode_ref(reader)?,)+))
+                }
+
+                fn from_ref(value: Self::Ref) -> Self {
+                    ($($name::from_ref(value.$index),)+)
+                }
+
+                fn missing() -> Option<Self> {
                     Some(($($name::missing()?,)+))
+                }
+
+                fn missing_ref() -> Option<Self::Ref> {
+                    Some(($($name::missing_ref()?,)+))
                 }
             }
         )*
@@ -109,7 +114,7 @@ impl_codec!(
     Box<[u8]> => Box::from,
     Bytes => Bytes::copy_from_slice,
 );
-impl_codec!(tuple: (A 0, B 1), (A 0, B 1, C 2));
+impl_codec!(tuple: (T0 0, T1 1), (T0 0, T1 1, T2 2));
 
 impl<const N: usize> Encode for Box<[u8; N]> {
     fn encoded_len(&self) -> usize {
@@ -121,22 +126,30 @@ impl<const N: usize> Encode for Box<[u8; N]> {
     }
 }
 
-impl<const N: usize> Decode for Box<[u8; N]> {
-    type Ref<'a> = &'a [u8; N];
+impl<B: ByteSlice, const N: usize> Decode<B> for Box<[u8; N]> {
+    type Ref = Ref<B, [u8; N]>;
 
-    fn decode_ref<'a>(reader: &mut Reader<'a>) -> Result<Self::Ref<'a>, Error> {
+    fn decode_ref(reader: &mut Reader<B>) -> Result<Self::Ref, Error> {
         reader.take_array()
     }
 
-    fn from_ref(value: &[u8; N]) -> Self {
-        // Through a slice, because a large array would be copied through the stack.
+    fn from_ref(value: Self::Ref) -> Self {
+        // copy through a slice to avoid putting a large array on the stack
         Box::<[u8]>::from(value.as_slice())
             .try_into()
             .expect("slice of an N byte array")
     }
 
-    fn missing<'a>() -> Option<Self::Ref<'a>> {
-        Some(&const { [0; N] })
+    fn missing() -> Option<Self> {
+        Some(
+            Box::<[u8]>::from(&const { [0; N] }[..])
+                .try_into()
+                .expect("slice of an N byte array"),
+        )
+    }
+
+    fn missing_ref() -> Option<Self::Ref> {
+        Ref::new(B::from_static(&const { [0; N] })?).ok()
     }
 }
 
@@ -152,23 +165,27 @@ impl<T: Encode, const N: usize> Encode for [T; N] {
     }
 }
 
-impl<T: Decode, const N: usize> Decode for [T; N] {
-    type Ref<'a> = [T::Ref<'a>; N];
+impl<B: ByteSlice, T: Decode<B>, const N: usize> Decode<B> for [T; N] {
+    type Ref = [T::Ref; N];
 
-    fn decode_ref<'a>(reader: &mut Reader<'a>) -> Result<Self::Ref<'a>, Error> {
-        decode_array(|| T::decode_ref(reader))
-    }
-
-    fn from_ref(value: Self::Ref<'_>) -> Self {
-        value.map(T::from_ref)
-    }
-
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, Error> {
+    fn decode(reader: &mut Reader<B>) -> Result<Self, Error> {
         decode_array(|| T::decode(reader))
     }
 
-    fn missing<'a>() -> Option<Self::Ref<'a>> {
+    fn decode_ref(reader: &mut Reader<B>) -> Result<Self::Ref, Error> {
+        decode_array(|| T::decode_ref(reader))
+    }
+
+    fn from_ref(value: Self::Ref) -> Self {
+        value.map(T::from_ref)
+    }
+
+    fn missing() -> Option<Self> {
         decode_array(|| T::missing().ok_or(())).ok()
+    }
+
+    fn missing_ref() -> Option<Self::Ref> {
+        decode_array(|| T::missing_ref().ok_or(())).ok()
     }
 }
 
@@ -218,29 +235,29 @@ impl<T: Encode> Encode for Vec<T> {
     }
 }
 
-impl<T: Decode> Decode for Vec<T> {
-    type Ref<'a> = Vec<T::Ref<'a>>;
+impl<B: ByteSlice, T: Decode<B>> Decode<B> for Vec<T> {
+    type Ref = Vec<T::Ref>;
 
-    fn decode_ref<'a>(reader: &mut Reader<'a>) -> Result<Self::Ref<'a>, Error> {
-        decode_list(reader, T::decode_ref)
-    }
-
-    fn from_ref(value: Self::Ref<'_>) -> Self {
-        value.into_iter().map(T::from_ref).collect()
-    }
-
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, Error> {
+    fn decode(reader: &mut Reader<B>) -> Result<Self, Error> {
         decode_list(reader, T::decode)
     }
 
-    fn missing<'a>() -> Option<Self::Ref<'a>> {
+    fn decode_ref(reader: &mut Reader<B>) -> Result<Self::Ref, Error> {
+        decode_list(reader, T::decode_ref)
+    }
+
+    fn from_ref(value: Self::Ref) -> Self {
+        value.into_iter().map(T::from_ref).collect()
+    }
+
+    fn missing_ref() -> Option<Self::Ref> {
         Some(Vec::new())
     }
 }
 
-fn decode_list<'a, T>(
-    reader: &mut Reader<'a>,
-    decode_item: impl Fn(&mut Reader<'a>) -> Result<T, Error>,
+fn decode_list<T, B: ByteSlice>(
+    reader: &mut Reader<B>,
+    decode_item: impl Fn(&mut Reader<B>) -> Result<T, Error>,
 ) -> Result<Vec<T>, Error> {
     let len = reader.decode_varint::<u32>()? as usize;
     // At most as much memory as the input, or a corrupt length could reserve gigabytes.
@@ -270,44 +287,47 @@ impl<K: Encode, V: Encode> Encode for BTreeMap<K, V> {
     }
 }
 
-/// A key that occurs twice keeps its last value
-impl<K, V> Decode for BTreeMap<K, V>
+/// a key that occurs twice keeps its last value
+impl<B, K, V> Decode<B> for BTreeMap<K, V>
 where
-    K: Decode + Ord,
-    V: Decode,
-    for<'a> K::Ref<'a>: Ord,
+    B: ByteSlice,
+    K: Decode<B> + Ord,
+    V: Decode<B>,
+    K::Ref: Ord,
 {
-    type Ref<'a> = BTreeMap<K::Ref<'a>, V::Ref<'a>>;
+    type Ref = BTreeMap<K::Ref, V::Ref>;
 
-    fn decode_ref<'a>(reader: &mut Reader<'a>) -> Result<Self::Ref<'a>, Error> {
+    fn decode(reader: &mut Reader<B>) -> Result<Self, Error> {
+        decode_map(reader, K::decode, V::decode)
+    }
+
+    fn decode_ref(reader: &mut Reader<B>) -> Result<Self::Ref, Error> {
         decode_map(reader, K::decode_ref, V::decode_ref)
     }
 
-    fn from_ref(value: Self::Ref<'_>) -> Self {
+    fn from_ref(value: Self::Ref) -> Self {
         value
             .into_iter()
             .map(|(key, value)| (K::from_ref(key), V::from_ref(value)))
             .collect()
     }
 
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, Error> {
-        decode_map(reader, K::decode, V::decode)
-    }
-
-    fn missing<'a>() -> Option<Self::Ref<'a>> {
+    fn missing_ref() -> Option<Self::Ref> {
         Some(BTreeMap::new())
     }
 }
 
-fn decode_map<'a, K: Ord, V>(
-    reader: &mut Reader<'a>,
-    decode_key: impl Fn(&mut Reader<'a>) -> Result<K, Error>,
-    decode_value: impl Fn(&mut Reader<'a>) -> Result<V, Error>,
+fn decode_map<K: Ord, V, B: ByteSlice>(
+    reader: &mut Reader<B>,
+    decode_key: impl Fn(&mut Reader<B>) -> Result<K, Error>,
+    decode_value: impl Fn(&mut Reader<B>) -> Result<V, Error>,
 ) -> Result<BTreeMap<K, V>, Error> {
-    let entries = decode_list(reader, |reader| {
-        Ok((decode_key(reader)?, decode_value(reader)?))
-    })?;
-    Ok(entries.into_iter().collect())
+    let len = reader.decode_varint::<u32>()? as usize;
+    let mut entries = BTreeMap::new();
+    for _ in 0..len {
+        entries.insert(decode_key(reader)?, decode_value(reader)?);
+    }
+    Ok(entries)
 }
 
 impl Encode for str {
@@ -332,22 +352,22 @@ impl Encode for String {
     }
 }
 
-impl Decode for String {
-    type Ref<'a> = &'a str;
+impl<B: ByteSlice> Decode<B> for String {
+    type Ref = Ref<B, str>;
 
     #[inline]
-    fn decode_ref<'a>(reader: &mut Reader<'a>) -> Result<Self::Ref<'a>, Error> {
-        std::str::from_utf8(reader.take_len_prefixed()?).map_err(|_| Error::InvalidUtf8)
+    fn decode_ref(reader: &mut Reader<B>) -> Result<Self::Ref, Error> {
+        Ref::new(reader.take_len_prefixed()?)
     }
 
     #[inline]
-    fn from_ref(value: &str) -> Self {
-        value.to_owned()
+    fn from_ref(value: Self::Ref) -> Self {
+        value.to_string()
     }
 
     #[inline]
-    fn missing<'a>() -> Option<Self::Ref<'a>> {
-        Some("")
+    fn missing_ref() -> Option<Self::Ref> {
+        Ref::new(B::empty()).ok()
     }
 }
 
@@ -364,7 +384,7 @@ impl Encode for NonZeroU8 {
 
 impl DecodeValue for NonZeroU8 {
     #[inline]
-    fn decode_value(reader: &mut Reader<'_>) -> Result<Self, Error> {
+    fn decode_value<B: ByteSlice>(reader: &mut Reader<B>) -> Result<Self, Error> {
         Self::new(reader.take_u8()?).ok_or(Error::InvalidData)
     }
 }
@@ -385,7 +405,7 @@ impl Encode for usize {
 
 impl DecodeValue for usize {
     #[inline]
-    fn decode_value(reader: &mut Reader<'_>) -> Result<Self, Error> {
+    fn decode_value<B: ByteSlice>(reader: &mut Reader<B>) -> Result<Self, Error> {
         Self::try_from(reader.decode_varint::<u64>()?).map_err(|_| Error::InvalidRange)
     }
 
@@ -408,7 +428,7 @@ impl Encode for bool {
 
 impl DecodeValue for bool {
     #[inline]
-    fn decode_value(reader: &mut Reader<'_>) -> Result<Self, Error> {
+    fn decode_value<B: ByteSlice>(reader: &mut Reader<B>) -> Result<Self, Error> {
         match reader.take_u8()? {
             0 => Ok(false),
             1 => Ok(true),
@@ -433,7 +453,7 @@ impl Encode for () {
 
 impl DecodeValue for () {
     #[inline]
-    fn decode_value(_reader: &mut Reader<'_>) -> Result<Self, Error> {
+    fn decode_value<B: ByteSlice>(_reader: &mut Reader<B>) -> Result<Self, Error> {
         Ok(())
     }
 
@@ -459,29 +479,29 @@ impl<T: Encode> Encode for Option<T> {
     }
 }
 
-impl<T: Decode> Decode for Option<T> {
-    type Ref<'a> = Option<T::Ref<'a>>;
+impl<B: ByteSlice, T: Decode<B>> Decode<B> for Option<T> {
+    type Ref = Option<T::Ref>;
 
-    fn decode_ref<'a>(reader: &mut Reader<'a>) -> Result<Self::Ref<'a>, Error> {
-        decode_option(reader, T::decode_ref)
-    }
-
-    fn from_ref(value: Self::Ref<'_>) -> Self {
-        value.map(T::from_ref)
-    }
-
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, Error> {
+    fn decode(reader: &mut Reader<B>) -> Result<Self, Error> {
         decode_option(reader, T::decode)
     }
 
-    fn missing<'a>() -> Option<Self::Ref<'a>> {
+    fn decode_ref(reader: &mut Reader<B>) -> Result<Self::Ref, Error> {
+        decode_option(reader, T::decode_ref)
+    }
+
+    fn from_ref(value: Self::Ref) -> Self {
+        value.map(T::from_ref)
+    }
+
+    fn missing_ref() -> Option<Self::Ref> {
         Some(None)
     }
 }
 
-fn decode_option<'a, T>(
-    reader: &mut Reader<'a>,
-    decode_value: impl Fn(&mut Reader<'a>) -> Result<T, Error>,
+fn decode_option<T, B: ByteSlice>(
+    reader: &mut Reader<B>,
+    decode_value: impl Fn(&mut Reader<B>) -> Result<T, Error>,
 ) -> Result<Option<T>, Error> {
     match reader.take_u8()? {
         0 => Ok(None),
@@ -512,26 +532,26 @@ impl<T: Encode, E: Encode> Encode for Result<T, E> {
     }
 }
 
-impl<T: Decode, E: Decode> Decode for Result<T, E> {
-    type Ref<'a> = Result<T::Ref<'a>, E::Ref<'a>>;
+impl<B: ByteSlice, T: Decode<B>, E: Decode<B>> Decode<B> for Result<T, E> {
+    type Ref = Result<T::Ref, E::Ref>;
 
-    fn decode_ref<'a>(reader: &mut Reader<'a>) -> Result<Self::Ref<'a>, Error> {
+    fn decode(reader: &mut Reader<B>) -> Result<Self, Error> {
+        decode_result(reader, T::decode, E::decode)
+    }
+
+    fn decode_ref(reader: &mut Reader<B>) -> Result<Self::Ref, Error> {
         decode_result(reader, T::decode_ref, E::decode_ref)
     }
 
-    fn from_ref(value: Self::Ref<'_>) -> Self {
+    fn from_ref(value: Self::Ref) -> Self {
         value.map(T::from_ref).map_err(E::from_ref)
-    }
-
-    fn decode(reader: &mut Reader<'_>) -> Result<Self, Error> {
-        decode_result(reader, T::decode, E::decode)
     }
 }
 
-fn decode_result<'a, T, E>(
-    reader: &mut Reader<'a>,
-    decode_value: impl Fn(&mut Reader<'a>) -> Result<T, Error>,
-    decode_error: impl Fn(&mut Reader<'a>) -> Result<E, Error>,
+fn decode_result<T, E, B: ByteSlice>(
+    reader: &mut Reader<B>,
+    decode_value: impl Fn(&mut Reader<B>) -> Result<T, Error>,
+    decode_error: impl Fn(&mut Reader<B>) -> Result<E, Error>,
 ) -> Result<Result<T, E>, Error> {
     match reader.take_u8()? {
         0 => Ok(Ok(decode_value(reader)?)),
@@ -554,7 +574,7 @@ impl Encode for Duration {
 
 impl DecodeValue for Duration {
     #[inline]
-    fn decode_value(reader: &mut Reader<'_>) -> Result<Self, Error> {
+    fn decode_value<B: ByteSlice>(reader: &mut Reader<B>) -> Result<Self, Error> {
         let secs: u64 = reader.decode()?;
         let nanos: u32 = reader.decode()?;
         if nanos >= 1_000_000_000 {
@@ -585,7 +605,7 @@ impl Encode for SystemTime {
 
 impl DecodeValue for SystemTime {
     #[inline]
-    fn decode_value(reader: &mut Reader<'_>) -> Result<Self, Error> {
+    fn decode_value<B: ByteSlice>(reader: &mut Reader<B>) -> Result<Self, Error> {
         UNIX_EPOCH
             .checked_add(reader.decode()?)
             .ok_or(Error::InvalidRange)
@@ -643,18 +663,26 @@ where
 /// ran out
 ///
 /// A field cut short is still an error.
-pub fn decode_field<T: Decode>(fields: &mut Reader<'_>) -> Result<T, Error> {
+pub fn decode_field<T, B>(fields: &mut Reader<B>) -> Result<T, Error>
+where
+    T: Decode<B>,
+    B: ByteSlice,
+{
     if fields.is_empty() {
-        T::missing().map(T::from_ref).ok_or(Error::UnexpectedEof)
+        T::missing().ok_or(Error::UnexpectedEof)
     } else {
         T::decode(fields)
     }
 }
 
 /// Like [`decode_field`], but borrows byte buffers and strings from `fields`
-pub fn decode_field_ref<'a, T: Decode>(fields: &mut Reader<'a>) -> Result<T::Ref<'a>, Error> {
+pub fn decode_field_ref<T, B>(fields: &mut Reader<B>) -> Result<T::Ref, Error>
+where
+    T: Decode<B>,
+    B: ByteSlice,
+{
     if fields.is_empty() {
-        T::missing().ok_or(Error::UnexpectedEof)
+        T::missing_ref().ok_or(Error::UnexpectedEof)
     } else {
         T::decode_ref(fields)
     }

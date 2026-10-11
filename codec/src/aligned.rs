@@ -1,13 +1,11 @@
 use core::ops::Deref;
 
-use crate::{Decode, Encode, Error, Reader};
+use crate::{ByteSlice, Decode, Encode, Error, Reader, Ref};
 
-/// a numeric collection borrowed by casting aligned encoding bytes
+/// an integer collection decoded as a typed reference into aligned encoding bytes
 ///
-/// fixed width integer vectors and arrays borrow as slices and array references without
-/// allocating. the encoding is unchanged, so callers must align the actual payload address.
-/// misaligned input returns [`Error::InvalidAlignment`]. multibyte integers require a little
-/// endian target. owned decoding reads the integers normally.
+/// the encoding is unchanged. the actual payload address must be aligned and multibyte
+/// integers require a little endian target. owned decoding reads the integers normally.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct Aligned<T>(pub T);
@@ -33,49 +31,52 @@ impl<T> Deref for Aligned<T> {
 macro_rules! impl_decode_aligned {
     ($($ty:ty),* $(,)?) => {
         $(
-            impl Decode for Aligned<Vec<$ty>> {
-                type Ref<'a> = &'a [$ty];
+            impl <B: ByteSlice> Decode<B> for Aligned<Vec<$ty>> {
+                type Ref = Ref<B, [$ty]>;
 
-                fn decode_ref<'a>(reader: &mut Reader<'a>) -> Result<Self::Ref<'a>, Error> {
-                    let len = reader.decode_varint::<u32>()? as usize;
-                    // safety: these fixed width integers accept every bit pattern
-                    unsafe { decode_slice::<$ty>(reader, len) }
-                }
-
-                fn from_ref(value: &[$ty]) -> Self {
-                    Self(value.to_vec())
-                }
-
-                fn decode(reader: &mut Reader<'_>) -> Result<Self, Error> {
+                fn decode(reader: &mut Reader<B>) -> Result<Self, Error> {
                     Vec::<$ty>::decode(reader).map(Self)
                 }
 
-                fn missing<'a>() -> Option<Self::Ref<'a>> {
-                    Some(&[])
+                fn decode_ref(reader: &mut Reader<B>) -> Result<Self::Ref, Error> {
+                    let len = reader.decode_varint::<u32>()? as usize;
+                    let byte_len = len.checked_mul(size_of::<$ty>()).ok_or(Error::LengthOverflow)?;
+                    Ref::new(reader.take_n(byte_len)?)
+                }
+
+                fn from_ref(value: Self::Ref) -> Self {
+                    Self(value.to_vec())
+                }
+
+                fn missing_ref() -> Option<Self::Ref> {
+                    Ref::new(B::empty()).ok()
                 }
             }
 
-            impl<const N: usize> Decode for Aligned<[$ty; N]> {
-                type Ref<'a> = &'a [$ty; N];
+            impl <B: ByteSlice, const N: usize> Decode<B> for Aligned<[$ty; N]> {
+                type Ref = Ref<B, [$ty; N]>;
 
-                fn decode_ref<'a>(reader: &mut Reader<'a>) -> Result<Self::Ref<'a>, Error> {
-                    // safety: these fixed width integers accept every bit pattern
-                    let items = unsafe { decode_slice::<$ty>(reader, N)? };
-                    Ok(items
-                        .try_into()
-                        .expect("slice of exactly N elements"))
-                }
-
-                fn from_ref(value: &[$ty; N]) -> Self {
-                    Self(*value)
-                }
-
-                fn decode(reader: &mut Reader<'_>) -> Result<Self, Error> {
+                fn decode(reader: &mut Reader<B>) -> Result<Self, Error> {
                     <[$ty; N]>::decode(reader).map(Self)
                 }
 
-                fn missing<'a>() -> Option<Self::Ref<'a>> {
-                    Some(&const { [0; N] })
+                fn decode_ref(reader: &mut Reader<B>) -> Result<Self::Ref, Error> {
+                    Ref::new(reader.take_n(size_of::<[$ty; N]>())?)
+                }
+
+                fn from_ref(value: Self::Ref) -> Self {
+                    Self(*value)
+                }
+
+                fn missing() -> Option<Self> {
+                    Some(Self([0; N]))
+                }
+
+                fn missing_ref() -> Option<Self::Ref> {
+                    let zeros = &const { [0 as $ty; N] };
+                    // safety: fixed width integers contain no padding and static zeros remain initialized
+                    let bytes = unsafe { std::slice::from_raw_parts(zeros.as_ptr().cast(), size_of::<[$ty; N]>()) };
+                    Ref::new(B::from_static(bytes)?).ok()
                 }
             }
         )*
@@ -83,24 +84,3 @@ macro_rules! impl_decode_aligned {
 }
 
 impl_decode_aligned!(u8, u16, u32, u64, i8, i16, i32, i64);
-
-// T must be a fixed width integer that accepts every bit pattern
-unsafe fn decode_slice<'a, T>(reader: &mut Reader<'a>, len: usize) -> Result<&'a [T], Error> {
-    if len == 0 {
-        return Ok(&[]);
-    }
-    if size_of::<T>() > 1 && !cfg!(target_endian = "little") {
-        return Err(Error::UnsupportedEndianness);
-    }
-    let byte_len = len
-        .checked_mul(size_of::<T>())
-        .ok_or(Error::LengthOverflow)?;
-    let bytes = reader.take_n(byte_len)?;
-    let ptr = bytes.as_ptr().cast::<T>();
-    if !ptr.is_aligned() {
-        return Err(Error::InvalidAlignment);
-    }
-    // safety: the slice covers len aligned elements and T accepts every bit pattern
-    // the input remains borrowed for 'a
-    Ok(unsafe { std::slice::from_raw_parts(ptr, len) })
-}

@@ -43,38 +43,52 @@ fn corrupt_lengths() {
     // Reserving room for `u32::MAX` items, or for an item per byte left, would hit the
     // allocator's cap.
     assert_eq!(
-        Vec::<[u8; 1024]>::decode_bytes(&input),
+        Vec::<[u8; 1024]>::decode_bytes(input.as_slice()),
         Err(Error::UnexpectedEof)
     );
-    assert_eq!(Vec::<u8>::decode_bytes(&input), Err(Error::UnexpectedEof));
+    assert_eq!(
+        Vec::<u8>::decode_bytes(input.as_slice()),
+        Err(Error::UnexpectedEof)
+    );
 }
 
 #[test]
 fn invalid_values() {
     assert_eq!(
-        Command::decode_bytes(&[2, 1, 50]),
-        Err(Error::InvalidDiscriminant)
-    );
-    assert_eq!(bool::decode_bytes(&[2]), Err(Error::InvalidDiscriminant));
-    assert_eq!(
-        Option::<u8>::decode_bytes(&[2, 0]),
+        Command::decode_bytes(&[2, 1, 50][..]),
         Err(Error::InvalidDiscriminant)
     );
     assert_eq!(
-        Result::<u8, u8>::decode_bytes(&[2, 0]),
+        bool::decode_bytes(&[2][..]),
         Err(Error::InvalidDiscriminant)
     );
-    assert_eq!(NonZeroU8::decode_bytes(&[0]), Err(Error::InvalidData));
     assert_eq!(
-        String::decode_bytes(&[2, 0xc3, 0x28]),
+        Option::<u8>::decode_bytes(&[2, 0][..]),
+        Err(Error::InvalidDiscriminant)
+    );
+    assert_eq!(
+        Result::<u8, u8>::decode_bytes(&[2, 0][..]),
+        Err(Error::InvalidDiscriminant)
+    );
+    assert_eq!(NonZeroU8::decode_bytes(&[0][..]), Err(Error::InvalidData));
+    assert_eq!(
+        String::decode_bytes(&[2, 0xc3, 0x28][..]),
         Err(Error::InvalidUtf8)
     );
     assert_eq!(
-        Duration::decode_bytes(&[[0; 8].as_slice(), &1_000_000_000u32.to_le_bytes()].concat()),
+        Duration::decode_bytes(
+            [[0; 8].as_slice(), &1_000_000_000u32.to_le_bytes()]
+                .concat()
+                .as_slice()
+        ),
         Err(Error::InvalidRange)
     );
     assert_eq!(
-        SystemTime::decode_bytes(&[u64::MAX.to_le_bytes().as_slice(), &[0; 4]].concat()),
+        SystemTime::decode_bytes(
+            [u64::MAX.to_le_bytes().as_slice(), &[0; 4]]
+                .concat()
+                .as_slice()
+        ),
         Err(Error::InvalidRange)
     );
 }
