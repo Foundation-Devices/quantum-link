@@ -690,7 +690,7 @@ where
     }
 }
 
-/// Like [`decode_field`], but borrows byte buffers and strings from `fields`
+/// Like [`decode_field`], but decodes the borrowed form
 pub fn decode_field_ref<T, B>(fields: &mut Reader<B>) -> Result<T::Ref, Error>
 where
     T: Decode<B>,

@@ -13,7 +13,7 @@ pub fn derive_codec_entry(item: proc_macro::TokenStream) -> proc_macro::TokenStr
 }
 
 fn derive_codec(item: syn::DeriveInput) -> Result<TokenStream, syn::Error> {
-    // borrowed fields are parameterized by their input container
+    // The borrowed form already borrows its input, and borrowing from two places isn't worth it.
     if let Some(lifetime) = item.generics.lifetimes().next() {
         return Err(syn::Error::new_spanned(
             lifetime,
@@ -549,7 +549,8 @@ impl<'a> Fields<'a> {
         })
     }
 
-    /// `value(field, binding)` is the field's value, `binding` the name [`Self::pattern`] gives it
+    /// `path { .. }` with each field set to `value(field, binding)`, `binding` being its name in
+    /// [`Self::pattern`]
     fn construct(
         &self,
         path: &TokenStream,
@@ -652,7 +653,7 @@ fn ref_generics(item: &syn::DeriveInput, input: &syn::Ident) -> syn::Generics {
     )
 }
 
-/// `generics` with `bound` on each field type when it has type parameters
+/// `generics` with `bound` on each field type, if the item is generic
 fn with_field_bounds(
     generics: &syn::Generics,
     item: &syn::DeriveInput,

@@ -1,37 +1,36 @@
 //! binary codec primitives shared by QuantumLink crates
 //!
 //! [`Encode`] and [`Decode`] define the wire encoding for protocol types
-//! [`Decode::decode_bytes`] reads a value from the start of a byte slice, and [`Reader`] several
-//! in a row. their `_ref` forms borrow data from the encoding.
+//! [`Decode::decode_bytes`] reads a value from the start of a byte container, and [`Reader`]
+//! several in a row. Their `_ref` forms borrow from the encoding instead.
 //!
 //! `#[derive(Codec)]` (feature `derive`) implements both for structs and enums, generic ones
-//! included. by default
-//! their encoding is backward and forward compatible: a struct, and the fields of an enum
-//! variant, are preceded by their length. A decoder fills fields that a shorter encoding lacks
-//! with [`Decode::missing`], and skips the ones it doesn't know. `#[codec(frozen)]` drops the
-//! lengths for types that won't change. Enumerators are varints either way, so only those below
-//! 128 take a single byte. Unless frozen, an enum decodes enumerators it doesn't know to its
-//! `#[codec(unknown)]` variant, or fails without one. `#[codec(derive(...))]` derives traits on
-//! the borrowed form of a non-generic type, which encodes the same as the owned one.
-//! traits such as `Clone` and `Copy` apply when the input container supports them.
-//! `#[codec(discriminants = Name)]`
-//! on an enum also generates `Name`, its variants without their fields and numbered by
-//! enumerator, and a `discriminant()` method returning it.
+//! included. By default their encoding is backward and forward compatible: a struct, and the
+//! fields of an enum variant, are preceded by their length. A decoder fills fields that a shorter
+//! encoding lacks with [`Decode::missing`], and skips the ones it doesn't know.
+//! `#[codec(frozen)]` drops the lengths for types that won't change. Enumerators are varints
+//! either way, so only those below 128 take a single byte. Unless frozen, an enum decodes
+//! enumerators it doesn't know to its `#[codec(unknown)]` variant, or fails without one. The
+//! derive generates `<Name>Ref<B>` as the borrowed form, which encodes the same as the owned one,
+//! and `#[codec(derive(...))]` derives traits on it for non-generic types.
+//! `#[codec(discriminants = Name)]` on an enum also generates `Name`, its variants without their
+//! fields and numbered by enumerator, and a `discriminant()` method returning it.
 //!
-//! Vectors and arrays of fixed-width integers borrow theirs as [`Ref`]s, like strings and byte
-//! buffers. Other vectors and arrays decode their elements into `Vec<T::Ref>` and
-//! `[T::Ref; N]`.
+//! Borrowed forms decode from `&[u8]`, `&mut [u8]`, `Bytes` or `BytesMut`, without copying.
+//! Strings, byte buffers, and vectors and arrays of fixed-width integers are lent as [`Ref`]s,
+//! which dereference to the value, mutably to change the encoding in place if the container is
+//! mutable. Other vectors and arrays decode their elements into `Vec<T::Ref>` and `[T::Ref; N]`.
 //!
 //! The integers are laid out like in memory: little-endian, starting a multiple of
-//! `size_of::<T>()` from the start of the encoding, with up to `size_of::<T>() - 1` zeros around
-//! them. [`Writer`] and [`Reader`] count from where they start, so an encoding must be decoded
-//! from its start. To borrow the integers, it must also start aligned for `T` in memory, or
-//! borrowed decoding fails with [`Error::InvalidAlignment`]. The owned form decodes either way.
+//! `size_of::<T>()` from the start of the encoding, with `size_of::<T>() - 1` zeros around them.
+//! [`Writer`] and [`Reader`] count from where they start, so an encoding must be decoded from its
+//! start. To borrow the integers, it must also start aligned for `T` in memory, or borrowed
+//! decoding fails with [`Error::InvalidAlignment`]. The owned form decodes either way.
 //!
 //! ```
 //! # #[cfg(feature = "derive")]
 //! # mod example {
-//! use ql_codec::{Codec, Encode, Reader};
+//! use ql_codec::{Codec, Decode, Encode};
 //!
 //! #[derive(Codec)]
 //! #[codec(frozen)]
@@ -43,28 +42,16 @@
 //! # fn example() -> Result<(), ql_codec::Error> {
 //! let message = Message { name: "hello".into(), bytes: vec![1, 2] };
 //! let mut bytes = message.encode_vec();
-//! let shared: MessageRef<&[u8]> = Reader::new(bytes.as_slice()).decode_ref::<Message>()?;
+//! let shared: MessageRef<&[u8]> = Message::decode_bytes_ref(bytes.as_slice())?;
 //! assert_eq!(shared.name, "hello");
 //!
-//! let mut mutable: MessageRef<&mut [u8]> = Reader::new(bytes.as_mut_slice()).decode_ref::<Message>()?;
+//! let mut mutable: MessageRef<&mut [u8]> = Message::decode_bytes_ref(bytes.as_mut_slice())?;
 //! mutable.name.make_ascii_uppercase();
 //! mutable.bytes[0] = 3;
 //! # Ok(())
 //! # }
 //! # }
 //! ```
-//!
-//! [`Reader`] accepts `&[u8]`, `&mut [u8]`, `Bytes` or `BytesMut`. its `take_n`, `take_array`,
-//! `take_all`, and `take_len_prefixed` methods preserve that container type, so a mutable
-//! reader lends disjoint mutable slices, and `Bytes` shares its buffer, without copying. owned
-//! `decode` works with any input.
-//! borrowed `decode_ref` selects shared or mutable views from the input. the derive generates
-//! one `MessageRef<B>` for a type named `Message`, recursively preserving
-//! mutability for every borrowed field, including strings and integer vectors and arrays.
-//! scalars and storage for decoded collections remain owned. typed fields implement `Deref`,
-//! and implement `DerefMut` when the input container does. input may be borrowed or owned.
-//! `decode_bytes` and `decode_bytes_ref` also accept any of them. pass `as_slice()` or
-//! `as_mut_slice()` when starting with a vector or array.
 //!
 //! Decoding recurses once per level of nesting, so a type decoded from untrusted input must not
 //! be recursive, or a deep enough encoding overflows the stack.
@@ -113,9 +100,10 @@ pub trait Encode {
 pub trait Decode<B: ByteSlice>: Sized {
     type Ref;
 
-    /// decodes the owned form through the borrowed form by default
+    /// decodes the owned form, through the borrowed form by default
     ///
-    /// collections should decode directly to avoid allocating storage twice.
+    /// a type holding other values should decode them directly, or decoding allocates twice and
+    /// misaligned integer lists fail to borrow.
     fn decode(reader: &mut Reader<B>) -> Result<Self, Error> {
         Self::decode_ref(reader).map(Self::from_ref)
     }
@@ -140,8 +128,8 @@ pub trait Decode<B: ByteSlice>: Sized {
 
     /// borrowed default for a field omitted by an older encoder
     ///
-    /// mutable input cannot borrow nonempty static defaults. wrap borrowed fixed arrays
-    /// in `Option` to allow older encodings to omit them.
+    /// a mutable container can't lend a non-empty array, so an array appended to a struct should
+    /// be an `Option`.
     fn missing_ref() -> Option<Self::Ref> {
         None
     }
@@ -173,18 +161,14 @@ impl<B: ByteSlice, T: DecodeValue> Decode<B> for T {
     }
 }
 
-/// Marks every encodable type except the fixed-width integers
+/// Marks the types whose lists and arrays decode item by item
 ///
-/// A `Vec<u32>` borrows as a `Ref<B, [u32]>`, because its encoding already is the values, laid
-/// out aligned. Any other `Vec<T>` decodes item by item into a `Vec<T::Ref>`: the items are
-/// built while decoding, so the list needs storage of its own, and only leaves such as integer
-/// lists and strings borrow from the encoding. Nested lists allocate at every level.
+/// That's every encodable type except the fixed-width integers, whose lists and arrays are lent
+/// as a whole, as `Ref<B, [T]>`. The two kinds need separate `Vec<T>` and `[T; N]` impls, and
+/// Rust only keeps those apart if the item-by-item ones require a marker the integers lack.
 ///
-/// These are separate impls for `Vec`, and Rust can't express that `T` isn't an integer, which
-/// would keep them apart, so every other type opts in here instead. The derive and
-/// `varint_wrapper!` do that, hand-written impls need an `impl Element for T {}`. Without it,
-/// `Vec<T>` and `[T; N]` don't implement [`Encode`] and [`Decode`], which shows up as an
-/// unsatisfied `T: Element`.
+/// The derive and `varint_wrapper!` implement it. A hand-written codec impl needs an
+/// `impl Element for T {}`, or `Vec<T>` and `[T; N]` fail with an unsatisfied `T: Element`.
 pub trait Element {}
 
 impl<T: Encode + ?Sized> Encode for &T {

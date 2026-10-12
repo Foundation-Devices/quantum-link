@@ -13,7 +13,7 @@ use crate::{BufView, ByteSlice, Element, Encode, Error, Output, Writer};
 /// a validated typed reference with the mutability of its byte container
 ///
 /// supports strings and fixed width integer slices and arrays. mutable access preserves
-/// the length and validity of the encoding. multibyte integers require little endian targets.
+/// the length and validity of the encoding.
 ///
 /// shared storage cannot be mutated through the typed reference
 ///

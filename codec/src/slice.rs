@@ -15,7 +15,7 @@ pub unsafe trait ByteSlice: Deref<Target = [u8]> + Sized {
     /// panics if `mid` exceeds the slice length
     fn split_off_front(&mut self, mid: usize) -> Self;
 
-    /// backing storage for missing borrowed fields, which a mutable container only has when empty
+    /// backing storage for a missing borrowed field, which a mutable container only has if empty
     fn from_static(bytes: &'static [u8]) -> Option<Self>;
 
     /// takes the first byte, if there is one

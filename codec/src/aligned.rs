@@ -16,8 +16,8 @@ fn padding(position: usize, size: usize) -> usize {
 
 /// Encoded length of `len` integers of type `T`, without a length prefix
 ///
-/// Up to `size_of::<T>() - 1` zeros precede them to align them, and the rest of those follow
-/// them, so the length doesn't depend on where they're encoded.
+/// `size_of::<T>() - 1` zeros surround them, enough before to align them and the rest after, so
+/// the length doesn't depend on where they're encoded.
 #[inline]
 fn encoded_len_ints<T: Pod>(len: usize) -> usize {
     size_of::<T>() - 1 + len * size_of::<T>()
@@ -61,8 +61,8 @@ fn copy_int_array<T: Pod, const N: usize>(bytes: &[u8]) -> [T; N] {
 
 /// Implements the codec traits for lists and arrays of a fixed-width integer
 ///
-/// These are separate impls for each integer, because generic ones would overlap with the ones
-/// for an [`Element`].
+/// Separate impls for each integer, because generic ones would overlap with those for an
+/// [`Element`].
 macro_rules! impl_int {
     ($($ty:ty),* $(,)?) => {
         $(

@@ -270,8 +270,8 @@ impl<M: StreamMeta> QlFsm<M> {
 
     /// handles one inbound wire message and returns whether it was processed rather than ignored
     ///
-    /// `bytes` is decrypted in place and kept as the backing store of the stream data it carries.
-    /// Nothing is copied, unless something else still references its buffer.
+    /// `bytes` is decrypted in place and backs the stream data it carries, so nothing is copied
+    /// unless something else still references its buffer
     pub fn receive(
         &mut self,
         now: Instant,
