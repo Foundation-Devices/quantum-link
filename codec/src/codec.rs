@@ -4,9 +4,12 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use bytes::{Buf, BufMut, Bytes};
+use bytes::{Buf, Bytes};
 
-use crate::{varint, BufView, ByteSlice, Decode, DecodeValue, Element, Encode, Error, Reader, Ref};
+use crate::{
+    varint, BufView, ByteSlice, Decode, DecodeValue, Element, Encode, Error, Output, Reader, Ref,
+    Writer,
+};
 
 macro_rules! impl_codec {
     (fixed_integer: $($ty:ty),* $(,)?) => {
@@ -17,7 +20,7 @@ macro_rules! impl_codec {
                     size_of::<Self>()
                 }
 
-                fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+                fn encode(&self, out: &mut Writer<impl Output>) {
                     out.put_slice(&self.to_le_bytes());
                 }
             }
@@ -44,7 +47,7 @@ macro_rules! impl_codec {
                     encoded_len_bytes(self)
                 }
 
-                fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+                fn encode(&self, out: &mut Writer<impl Output>) {
                     encode_bytes(self, out);
                 }
             }
@@ -76,7 +79,7 @@ macro_rules! impl_codec {
                     0 $(+ self.$index.encoded_len())+
                 }
 
-                fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+                fn encode(&self, out: &mut Writer<impl Output>) {
                     $(self.$index.encode(out);)+
                 }
             }
@@ -116,55 +119,21 @@ macro_rules! impl_codec {
 impl_codec!(fixed_integer: u8, u16, u32, u64, i8, i16, i32, i64);
 impl_codec!(
     byte_buffer:
-    Vec<u8> => <[u8]>::to_vec,
     Box<[u8]> => Box::from,
     Bytes => Bytes::copy_from_slice,
 );
 impl_codec!(tuple: (T0 0, T1 1), (T0 0, T1 1, T2 2));
-// Everything but `u8`, so `Vec<u8>` can borrow as `Ref<B, [u8]>`.
+// Not the fixed-width integers, so their lists can borrow as `Ref<B, [T]>`.
 impl_codec!(
-    element: u16, u32, u64, i8, i16, i32, i64, usize, bool, NonZeroU8, (),
-    Vec<u8>, Box<[u8]>, Bytes, String, Duration, SystemTime,
+    element: usize, bool, NonZeroU8, (), Box<[u8]>, Bytes, String, Duration, SystemTime,
 );
-
-impl<const N: usize> Encode for [u8; N] {
-    fn encoded_len(&self) -> usize {
-        N
-    }
-
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
-        out.put_slice(self);
-    }
-}
-
-impl<B: ByteSlice, const N: usize> Decode<B> for [u8; N] {
-    type Ref = Ref<B, [u8; N]>;
-
-    fn decode_ref(reader: &mut Reader<B>) -> Result<Self::Ref, Error> {
-        reader.take_array()
-    }
-
-    fn from_ref(value: Self::Ref) -> Self {
-        *value
-    }
-
-    fn missing() -> Option<Self> {
-        Some([0; N])
-    }
-
-    fn missing_ref() -> Option<Self::Ref> {
-        Ref::new(B::from_static(&const { [0; N] })?).ok()
-    }
-}
-
-impl<const N: usize> Element for [u8; N] {}
 
 impl<const N: usize> Encode for Box<[u8; N]> {
     fn encoded_len(&self) -> usize {
         N
     }
 
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         out.put_slice(self.as_ref());
     }
 }
@@ -203,7 +172,7 @@ impl<T: Encode + Element, const N: usize> Encode for [T; N] {
         self.iter().map(Encode::encoded_len).sum()
     }
 
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         for item in self {
             item.encode(out);
         }
@@ -258,24 +227,13 @@ fn decode_array<T, E, const N: usize>(
     }
 }
 
-impl Encode for [u8] {
-    #[inline]
-    fn encoded_len(&self) -> usize {
-        encoded_len_bytes(self)
-    }
-
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
-        encode_bytes(self, out);
-    }
-}
-
 impl<T: Encode + Element> Encode for [T] {
     fn encoded_len(&self) -> usize {
         varint::encoded_len(len_prefix(self.len()))
             + self.iter().map(Encode::encoded_len).sum::<usize>()
     }
 
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         varint::encode(len_prefix(self.len()), out);
         for item in self {
             item.encode(out);
@@ -288,7 +246,7 @@ impl<T: Encode + Element> Encode for Vec<T> {
         self.as_slice().encoded_len()
     }
 
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         self.as_slice().encode(out);
     }
 }
@@ -338,7 +296,7 @@ impl<K: Encode, V: Encode> Encode for BTreeMap<K, V> {
                 .sum::<usize>()
     }
 
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         varint::encode(len_prefix(self.len()), out);
         for (key, value) in self {
             key.encode(out);
@@ -398,7 +356,7 @@ impl Encode for str {
         self.as_bytes().encoded_len()
     }
 
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         self.as_bytes().encode(out);
     }
 }
@@ -409,7 +367,7 @@ impl Encode for String {
         self.as_str().encoded_len()
     }
 
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         self.as_str().encode(out);
     }
 }
@@ -439,7 +397,7 @@ impl Encode for NonZeroU8 {
         size_of::<u8>()
     }
 
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         out.put_u8(self.get());
     }
 }
@@ -460,7 +418,7 @@ impl Encode for usize {
         varint::encoded_len(*self as u64)
     }
 
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         varint::encode(*self as u64, out);
     }
 }
@@ -483,7 +441,7 @@ impl Encode for bool {
         size_of::<u8>()
     }
 
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         out.put_u8(u8::from(*self));
     }
 }
@@ -510,7 +468,7 @@ impl Encode for () {
         0
     }
 
-    fn encode<W: BufMut + ?Sized>(&self, _out: &mut W) {}
+    fn encode(&self, _out: &mut Writer<impl Output>) {}
 }
 
 impl DecodeValue for () {
@@ -530,7 +488,7 @@ impl<T: Encode> Encode for Option<T> {
         1 + self.as_ref().map_or(0, Encode::encoded_len)
     }
 
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         match self {
             None => out.put_u8(0),
             Some(inner) => {
@@ -582,7 +540,7 @@ impl<T: Encode, E: Encode> Encode for Result<T, E> {
         }
     }
 
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         match self {
             Ok(value) => {
                 out.put_u8(0);
@@ -632,7 +590,7 @@ impl Encode for Duration {
         size_of::<u64>() + size_of::<u32>()
     }
 
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         self.as_secs().encode(out);
         self.subsec_nanos().encode(out);
     }
@@ -662,7 +620,7 @@ impl Encode for SystemTime {
         Duration::ZERO.encoded_len()
     }
 
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         self.duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .encode(out);
@@ -682,7 +640,7 @@ impl DecodeValue for SystemTime {
 /// `usize` varint is capped at ten bytes on one target and five on the other.
 #[track_caller]
 #[inline]
-fn len_prefix(len: usize) -> u32 {
+pub(crate) fn len_prefix(len: usize) -> u32 {
     u32::try_from(len).expect("length prefix above u32::MAX")
 }
 
@@ -693,7 +651,7 @@ pub fn encoded_len_prefixed(len: usize) -> usize {
 }
 
 /// Writes the length prefix for `len` bytes
-pub fn encode_len_prefix<W: BufMut + ?Sized>(len: usize, out: &mut W) {
+pub fn encode_len_prefix(len: usize, out: &mut Writer<impl Output>) {
     varint::encode(len_prefix(len), out);
 }
 
@@ -701,22 +659,13 @@ pub fn encoded_len_bytes<B: BufView + ?Sized>(bytes: &B) -> usize {
     encoded_len_prefixed(bytes.buf().remaining())
 }
 
-pub fn encode_bytes<B, W>(bytes: &B, out: &mut W)
-where
-    B: BufView + ?Sized,
-    W: BufMut + ?Sized,
-{
+pub fn encode_bytes<B: BufView + ?Sized>(bytes: &B, out: &mut Writer<impl Output>) {
     encode_len_prefix(bytes.buf().remaining(), out);
     encode_bytes_raw(bytes, out);
 }
 
 /// Writes the bytes without a length prefix, for a field that runs to the end of the message.
-pub fn encode_bytes_raw<B, W>(bytes: &B, out: &mut W)
-where
-    B: BufView + ?Sized,
-    W: BufMut + ?Sized,
-{
-    // `BufMut::put` needs a sized writer, so feed it a chunk at a time.
+pub fn encode_bytes_raw<B: BufView + ?Sized>(bytes: &B, out: &mut Writer<impl Output>) {
     let mut bytes = bytes.buf();
     while bytes.has_remaining() {
         let chunk = bytes.chunk();

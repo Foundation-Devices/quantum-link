@@ -1,5 +1,5 @@
 use bytes::Buf;
-use ql_codec::{encode_bytes_raw, BufView, ByteSlice, Decode, Encode, Reader};
+use ql_codec::{encode_bytes_raw, BufView, ByteSlice, Decode, Encode, Output, Reader, Writer};
 
 use crate::ENCRYPTED_MESSAGE_AUTH_SIZE;
 
@@ -41,7 +41,7 @@ impl<B: BufView> Encode for EncryptedMessage<B> {
         self.auth.encoded_len() + self.ciphertext.buf().remaining()
     }
 
-    fn encode<W: ::bytes::BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         self.auth.encode(out);
         encode_bytes_raw(&self.ciphertext, out);
     }

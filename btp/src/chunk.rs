@@ -1,7 +1,6 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use bytes::BufMut;
-use ql_codec::Encode;
+use ql_codec::{Encode, Writer};
 
 use crate::{Header, APP_MTU, CHUNK_DATA_SIZE, MAX_RECORD_SIZE, V2_TAG_BITS};
 
@@ -28,7 +27,7 @@ impl Iterator for Chunker<'_> {
             tagged_record_len: V2_TAG_BITS | self.data.len() as u32,
         };
         let mut chunk = [0; APP_MTU];
-        let mut output = &mut chunk[..];
+        let mut output = Writer::new(&mut chunk[..]);
         header.encode(&mut output);
         output.put_slice(data);
         self.index += 1;

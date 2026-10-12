@@ -171,6 +171,16 @@ fn encodings_match_fixed_bytes() {
 }
 
 #[test]
+fn integer_lists_are_aligned_to_their_size() {
+    assert_eq!((1u8, vec![0x0302u16]).encode_vec(), [1, 1, 2, 3, 0]);
+    assert_eq!((1u8, 2u8, vec![0x0302u16]).encode_vec(), [1, 2, 1, 0, 2, 3]);
+    assert_eq!(
+        (1u8, [0x0504_0302u32]).encode_vec(),
+        [1, 0, 0, 0, 2, 3, 4, 5]
+    );
+}
+
+#[test]
 fn new_decoder_fills_missing_fields() {
     let status: v2::Status = decode(V1_STATUS);
     assert_eq!(

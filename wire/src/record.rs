@@ -1,4 +1,4 @@
-use ql_codec::{BufMut, BufView, ByteSlice, Decode, Encode, Reader};
+use ql_codec::{BufView, ByteSlice, Decode, Encode, Output, Reader, Writer};
 use ql_common::QID;
 
 use crate::{
@@ -7,19 +7,21 @@ use crate::{
     Error, RouteHeader, SessionHeader, QL_WIRE_VERSION,
 };
 
-pub fn encode_record<W, T>(out: &mut W, header: RecordHeader, body: &T)
-where
-    W: bytes::BufMut + ?Sized,
-    T: Encode + ?Sized,
-{
+pub fn encode_record<T: Encode + ?Sized>(
+    out: &mut Writer<impl Output>,
+    header: RecordHeader,
+    body: &T,
+) {
     header.encode(out);
     body.encode(out);
 }
 
 pub fn encode_record_vec<T: Encode + ?Sized>(header: RecordHeader, body: &T) -> Vec<u8> {
-    let mut out = Vec::with_capacity(header.encoded_len() + body.encoded_len());
+    let mut out = Writer::new(Vec::with_capacity(
+        header.encoded_len() + body.encoded_len(),
+    ));
     encode_record(&mut out, header, body);
-    out
+    out.into_inner()
 }
 
 pub fn decode_record<'a, T: Decode<&'a [u8]>>(
@@ -90,7 +92,7 @@ impl<B: BufView> Encode for QlSessionRecord<B> {
         self.header.encoded_len() + self.payload.encoded_len()
     }
 
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         self.header.encode(out);
         self.payload.encode(out);
     }

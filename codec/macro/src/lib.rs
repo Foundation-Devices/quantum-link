@@ -156,7 +156,7 @@ fn expand(
                     #encoded_len
                 }
 
-                fn encode<W: ::ql_codec::BufMut + ?Sized>(&self, out: &mut W) {
+                fn encode(&self, out: &mut ::ql_codec::Writer<impl ::ql_codec::Output>) {
                     #encode
                 }
             }
@@ -653,7 +653,7 @@ fn decode_prelude(frozen: bool) -> TokenStream {
     quote!(
         // Unused without fields, but the body still has to be skipped.
         #[allow(unused_mut, unused_variables)]
-        let mut fields = ::ql_codec::Reader::new(reader.take_len_prefixed()?);
+        let mut fields = reader.take_len_prefixed_reader()?;
     )
 }
 

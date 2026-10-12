@@ -1,6 +1,6 @@
 use std::{fmt, ops::RangeInclusive};
 
-use ql_codec::{Encode, Error, Varint};
+use ql_codec::{Encode, Error, Output, Varint, Writer};
 
 use crate::RecordSeq;
 
@@ -135,7 +135,7 @@ impl Encode for RecordAck {
                 .sum::<usize>()
     }
 
-    fn encode<W: ::bytes::BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         self.largest_acked.encode(out);
         Varint(Self::block_count(self.blocks.len())).encode(out);
         self.first_range_len.encode(out);

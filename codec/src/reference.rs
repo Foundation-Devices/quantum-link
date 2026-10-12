@@ -6,7 +6,9 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
-use crate::{BufView, ByteSlice, Element, Encode, Error};
+use bytemuck::{Pod, PodCastError};
+
+use crate::{BufView, ByteSlice, Element, Encode, Error, Output, Writer};
 
 /// a validated typed reference with the mutability of its byte container
 ///
@@ -113,7 +115,7 @@ impl<B: ByteSlice, T: Target + Encode + ?Sized> Encode for Ref<B, T> {
         (**self).encoded_len()
     }
 
-    fn encode<W: bytes::BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         (**self).encode(out);
     }
 }
@@ -208,65 +210,60 @@ unsafe impl Target for str {
     }
 }
 
-macro_rules! integer_targets {
-    ($($ty:ty),* $(,)?) => {
-        $(
-            // safety: fixed width integers accept every bit pattern and have no padding
-            unsafe impl Target for [$ty] {
-                fn validate(bytes: &[u8]) -> Result<(), Error> {
-                    if bytes.is_empty() {
-                        return Ok(());
-                    }
-                    if size_of::<$ty>() > 1 && !cfg!(target_endian = "little") {
-                        return Err(Error::UnsupportedEndianness);
-                    }
-                    if bytes.len() % size_of::<$ty>() != 0 {
-                        return Err(Error::InvalidData);
-                    }
-                    if !bytes.as_ptr().cast::<$ty>().is_aligned() {
-                        return Err(Error::InvalidAlignment);
-                    }
-                    Ok(())
-                }
+// safety: bytemuck checks the size and alignment of every cast
+unsafe impl<T: Pod> Target for [T] {
+    fn validate(bytes: &[u8]) -> Result<(), Error> {
+        if bytes.is_empty() {
+            return Ok(());
+        }
+        bytemuck::try_cast_slice::<u8, T>(bytes)
+            .map(drop)
+            .map_err(|error| match error {
+                PodCastError::TargetAlignmentGreaterAndInputNotAligned => Error::InvalidAlignment,
+                _ => Error::InvalidData,
+            })
+    }
 
-                unsafe fn from_bytes(bytes: &[u8]) -> &Self {
-                    if bytes.is_empty() {
-                        return &[];
-                    }
-                    // safety: validation checked alignment and the element count
-                    unsafe { std::slice::from_raw_parts(bytes.as_ptr().cast(), bytes.len() / size_of::<$ty>()) }
-                }
+    unsafe fn from_bytes(bytes: &[u8]) -> &Self {
+        cast(bytes)
+    }
 
-                unsafe fn from_bytes_mut(bytes: &mut [u8]) -> &mut Self {
-                    if bytes.is_empty() {
-                        return &mut [];
-                    }
-                    // safety: validation checked alignment and the element count and the borrow is exclusive
-                    unsafe { std::slice::from_raw_parts_mut(bytes.as_mut_ptr().cast(), bytes.len() / size_of::<$ty>()) }
-                }
-            }
-
-            // safety: validation additionally checks the fixed array length
-            unsafe impl<const N: usize> Target for [$ty; N] {
-                fn validate(bytes: &[u8]) -> Result<(), Error> {
-                    if bytes.len() != size_of::<Self>() {
-                        return Err(Error::InvalidData);
-                    }
-                    <[$ty] as Target>::validate(bytes)
-                }
-
-                unsafe fn from_bytes(bytes: &[u8]) -> &Self {
-                    // safety: the caller provides validated bytes for exactly N elements
-                    unsafe { <[$ty] as Target>::from_bytes(bytes) }.try_into().unwrap()
-                }
-
-                unsafe fn from_bytes_mut(bytes: &mut [u8]) -> &mut Self {
-                    // safety: the caller provides exclusive validated bytes for exactly N elements
-                    unsafe { <[$ty] as Target>::from_bytes_mut(bytes) }.try_into().unwrap()
-                }
-            }
-        )*
-    };
+    unsafe fn from_bytes_mut(bytes: &mut [u8]) -> &mut Self {
+        cast_mut(bytes)
+    }
 }
 
-integer_targets!(u8, u16, u32, u64, i8, i16, i32, i64);
+// safety: see `[T]`, and validation additionally checks the fixed array length
+unsafe impl<T: Pod, const N: usize> Target for [T; N] {
+    fn validate(bytes: &[u8]) -> Result<(), Error> {
+        if bytes.len() != size_of::<Self>() {
+            return Err(Error::InvalidData);
+        }
+        <[T] as Target>::validate(bytes)
+    }
+
+    unsafe fn from_bytes(bytes: &[u8]) -> &Self {
+        cast(bytes).try_into().expect("validated length")
+    }
+
+    unsafe fn from_bytes_mut(bytes: &mut [u8]) -> &mut Self {
+        cast_mut(bytes).try_into().expect("validated length")
+    }
+}
+
+/// `bytes` as `T`s, which they must hold exactly and aligned
+fn cast<T: Pod>(bytes: &[u8]) -> &[T] {
+    // an empty slice may sit at any address, but there's nothing to cast
+    if bytes.is_empty() {
+        return &[];
+    }
+    bytemuck::cast_slice(bytes)
+}
+
+/// see [`cast`]
+fn cast_mut<T: Pod>(bytes: &mut [u8]) -> &mut [T] {
+    if bytes.is_empty() {
+        return &mut [];
+    }
+    bytemuck::cast_slice_mut(bytes)
+}

@@ -3,12 +3,19 @@ use crate::{varint, ByteSlice, Decode, Error, Ref};
 #[derive(Clone)]
 pub struct Reader<B> {
     remaining: B,
+    /// Position of the end of `remaining`
+    end: usize,
 }
 
 impl<B: ByteSlice> Reader<B> {
+    /// Reads an encoding from its start
     #[inline]
     pub fn new(bytes: B) -> Self {
-        Self { remaining: bytes }
+        let end = bytes.len();
+        Self {
+            remaining: bytes,
+            end,
+        }
     }
 
     #[inline]
@@ -19,6 +26,12 @@ impl<B: ByteSlice> Reader<B> {
     #[inline]
     pub fn remaining_len(&self) -> usize {
         self.remaining.len()
+    }
+
+    /// Bytes read since the encoding started
+    #[inline]
+    pub fn position(&self) -> usize {
+        self.end - self.remaining.len()
     }
 
     #[inline]
@@ -48,6 +61,17 @@ impl<B: ByteSlice> Reader<B> {
     pub fn take_len_prefixed(&mut self) -> Result<B, Error> {
         let len = self.decode_varint::<u32>()?;
         self.take_n(len as usize)
+    }
+
+    /// Like [`Reader::take_len_prefixed`], but reads the bytes as part of this encoding, so
+    /// integer lists in them stay aligned
+    #[inline]
+    pub fn take_len_prefixed_reader(&mut self) -> Result<Self, Error> {
+        let remaining = self.take_len_prefixed()?;
+        Ok(Self {
+            remaining,
+            end: self.position(),
+        })
     }
 
     #[inline]

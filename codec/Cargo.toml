@@ -6,6 +6,7 @@ description = "QuantumLink binary codec primitives"
 license.workspace = true
 
 [dependencies]
+bytemuck = { workspace = true }
 bytes = { workspace = true }
 ql-codec-macro = { workspace = true, optional = true }
 

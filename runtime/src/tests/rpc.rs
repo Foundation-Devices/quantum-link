@@ -7,8 +7,7 @@ use std::{
     time::Duration,
 };
 
-use bytes::BufMut;
-use ql_codec::Encode;
+use ql_codec::{Encode, Writer};
 use ql_rpc::{
     progress::{ProgressHandlerLocal, ProgressResponder},
     request::{RequestHandler, Response},
@@ -26,8 +25,8 @@ impl ql_rpc::RpcRouteKey for TestRouteKey {
         ql_codec::Varint(self.0).encoded_len()
     }
 
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
-        ql_codec::Varint(self.0).encode(out);
+    fn encode(&self, out: &mut Vec<u8>) {
+        ql_codec::Varint(self.0).encode(&mut Writer::new(out));
     }
 
     fn decode(bytes: &[u8]) -> Option<Self> {

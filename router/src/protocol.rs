@@ -2,7 +2,7 @@
 
 use std::{fmt, io};
 
-use ql_codec::{Decode, Encode, Reader};
+use ql_codec::{Decode, Encode, Reader, Writer};
 use ql_common::QID;
 use ql_wire::{
     Ik1, Ik2, Nonce, QlAead, QlHandshakeRecord, QlHash, QlRandom, RecordHeader, SessionKey,
@@ -143,7 +143,7 @@ pub fn seal_cookie(
         connection_id,
         expires_at,
     }
-    .encode(&mut encoded.as_mut_slice());
+    .encode(&mut Writer::new(encoded.as_mut_slice()));
     let tag = crypto.aes256_gcm_encrypt(key, &nonce, COOKIE_DOMAIN, &mut encoded);
     AttachCookie {
         nonce,
@@ -270,8 +270,7 @@ pub fn seal_packet_into(
         .ok_or(Error::FrameTooLarge)?;
     packet.clear();
     packet.reserve(FRAME_HEADER_SIZE + length);
-    (length as u32).encode(packet);
-    kind.encode(packet);
+    (length as u32, kind).encode(&mut Writer::new(&mut *packet));
     packet.extend_from_slice(payload);
     let tag = crypto.aes256_gcm_encrypt(key, &Nonce::from_counter(nonce), packet, &mut []);
     packet.extend_from_slice(&tag);
@@ -349,7 +348,7 @@ pub async fn write_frame(writer: &mut (impl AsyncWrite + Unpin), payload: &[u8])
         return Err(Error::FrameTooLarge.into());
     }
     let mut header = [0; FRAME_HEADER_SIZE];
-    (payload.len() as u32).encode(&mut header.as_mut_slice());
+    (payload.len() as u32).encode(&mut Writer::new(header.as_mut_slice()));
     writer.write_all(&header).await?;
     writer.write_all(payload).await
 }

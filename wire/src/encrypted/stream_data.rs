@@ -1,5 +1,6 @@
 use ql_codec::{
-    encode_bytes, encoded_len_bytes, BufView, ByteSlice, Decode, Encode, Error, Reader, Varint,
+    encode_bytes, encoded_len_bytes, BufView, ByteSlice, Decode, Encode, Error, Output, Reader,
+    Varint, Writer,
 };
 use ql_common::StreamId;
 
@@ -108,7 +109,7 @@ impl<B: BufView, H: BufView> Encode for StreamData<B, H> {
             + encoded_len_bytes(&self.bytes)
     }
 
-    fn encode<W: ::bytes::BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         debug_assert!(
             *self.offset == 0 || self.open.is_none(),
             "stream opening is only valid at offset 0"

@@ -18,8 +18,15 @@
 //! on an enum also generates `Name`, its variants without their fields and numbered by
 //! enumerator, and a `discriminant()` method returning it.
 //!
-//! byte vectors and arrays borrow their bytes as [`Ref`]s, like strings. other vectors and
-//! arrays decode their elements into `Vec<T::Ref>` and `[T::Ref; N]`.
+//! Vectors and arrays of fixed-width integers borrow theirs as [`Ref`]s, like strings and byte
+//! buffers. Other vectors and arrays decode their elements into `Vec<T::Ref>` and
+//! `[T::Ref; N]`.
+//!
+//! The integers are laid out like in memory: little-endian, starting a multiple of
+//! `size_of::<T>()` from the start of the encoding, with up to `size_of::<T>() - 1` zeros around
+//! them. [`Writer`] and [`Reader`] count from where they start, so an encoding must be decoded
+//! from its start. To borrow the integers, it must also start aligned for `T` in memory, or
+//! borrowed decoding fails with [`Error::InvalidAlignment`]. The owned form decodes either way.
 //!
 //! ```
 //! # #[cfg(feature = "derive")]
@@ -53,7 +60,7 @@
 //! `decode` works with any input.
 //! borrowed `decode_ref` selects shared or mutable views from the input. the derive generates
 //! one `MessageRef<B>` for a type named `Message`, recursively preserving
-//! mutability for every borrowed field, including strings and byte arrays.
+//! mutability for every borrowed field, including strings and integer vectors and arrays.
 //! scalars and storage for decoded collections remain owned. typed fields implement `Deref`,
 //! and implement `DerefMut` when the input container does. input may be borrowed or owned.
 //! `decode_bytes` and `decode_bytes_ref` also accept any of them. pass `as_slice()` or
@@ -62,6 +69,7 @@
 //! Decoding recurses once per level of nesting, so a type decoded from untrusted input must not
 //! be recursive, or a deep enough encoding overflows the stack.
 
+mod aligned;
 mod buf_view;
 mod codec;
 mod error;
@@ -69,9 +77,9 @@ mod reader;
 mod reference;
 mod slice;
 pub mod varint;
+mod writer;
 
 pub use buf_view::BufView;
-pub use bytes::BufMut;
 pub use codec::{
     decode_field, decode_field_ref, encode_bytes, encode_bytes_raw, encode_len_prefix,
     encoded_len_bytes, encoded_len_prefixed,
@@ -83,18 +91,19 @@ pub use reader::Reader;
 pub use reference::Ref;
 pub use slice::ByteSlice;
 pub use varint::Varint;
+pub use writer::{Output, Writer};
 
 pub trait Encode {
     fn encoded_len(&self) -> usize;
 
-    fn encode<W: bytes::BufMut + ?Sized>(&self, out: &mut W);
+    fn encode(&self, out: &mut Writer<impl Output>);
 
     fn encode_vec(&self) -> Vec<u8> {
         let len = self.encoded_len();
-        let mut out = Vec::with_capacity(len);
+        let mut out = Writer::new(Vec::with_capacity(len));
         self.encode(&mut out);
-        assert_eq!(out.len(), len);
-        out
+        assert_eq!(out.position(), len);
+        out.into_inner()
     }
 }
 
@@ -164,17 +173,18 @@ impl<B: ByteSlice, T: DecodeValue> Decode<B> for T {
     }
 }
 
-/// Marks every encodable type except `u8`
+/// Marks every encodable type except the fixed-width integers
 ///
-/// A `Vec<u8>` borrows as a `Ref<B, [u8]>`, because its encoded bytes already are the values.
-/// Any other `Vec<T>` decodes item by item into a `Vec<T::Ref>`: the items are built while
-/// decoding, so the list needs storage of its own, and only leaves such as byte buffers and
-/// strings borrow from the encoding. Nested lists allocate at every level.
+/// A `Vec<u32>` borrows as a `Ref<B, [u32]>`, because its encoding already is the values, laid
+/// out aligned. Any other `Vec<T>` decodes item by item into a `Vec<T::Ref>`: the items are
+/// built while decoding, so the list needs storage of its own, and only leaves such as integer
+/// lists and strings borrow from the encoding. Nested lists allocate at every level.
 ///
-/// These are two separate impls for `Vec`, and Rust can't express the `T != u8` that would keep
-/// them apart, so every other type opts in here instead. The derive and `varint_wrapper!` do
-/// that, hand-written impls need an `impl Element for T {}`. Without it, `Vec<T>` and `[T; N]`
-/// don't implement [`Encode`] and [`Decode`], which shows up as an unsatisfied `T: Element`.
+/// These are separate impls for `Vec`, and Rust can't express that `T` isn't an integer, which
+/// would keep them apart, so every other type opts in here instead. The derive and
+/// `varint_wrapper!` do that, hand-written impls need an `impl Element for T {}`. Without it,
+/// `Vec<T>` and `[T; N]` don't implement [`Encode`] and [`Decode`], which shows up as an
+/// unsatisfied `T: Element`.
 pub trait Element {}
 
 impl<T: Encode + ?Sized> Encode for &T {
@@ -182,7 +192,7 @@ impl<T: Encode + ?Sized> Encode for &T {
         (**self).encoded_len()
     }
 
-    fn encode<W: bytes::BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         (**self).encode(out);
     }
 }
@@ -194,7 +204,7 @@ impl<T: Encode + ?Sized> Encode for &mut T {
         (**self).encoded_len()
     }
 
-    fn encode<W: bytes::BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         (**self).encode(out);
     }
 }
@@ -211,8 +221,8 @@ macro_rules! varint_wrapper {
                 $crate::varint::encoded_len::<$inner>(self.0)
             }
 
-            fn encode<W: $crate::BufMut + ?Sized>(&self, out: &mut W) {
-                $crate::varint::encode::<$inner, W>(self.0, out);
+            fn encode(&self, out: &mut $crate::Writer<impl $crate::Output>) {
+                $crate::varint::encode::<$inner>(self.0, out);
             }
         }
 

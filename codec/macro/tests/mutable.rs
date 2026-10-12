@@ -73,7 +73,7 @@ fn missing_mutable_fields_only_default_without_backing_storage() {
         text: String,
         bytes: Box<[u8]>,
         items: Vec<String>,
-        fixed: Option<[u8; 2]>,
+        fixed: Option<[u32; 2]>,
         empty: Box<[u8; 0]>,
     }
 
@@ -101,10 +101,20 @@ fn missing_mutable_fields_only_default_without_backing_storage() {
         *Fixed::decode_bytes(bytes.as_mut_slice()).unwrap().bytes,
         [0, 0]
     );
-    assert!(<[u8; 2] as Decode<&mut [u8]>>::missing_ref().is_none());
-    assert!(<[u8; 0] as Decode<&mut [u8]>>::missing_ref()
+    assert!(<[u32; 2] as Decode<&mut [u8]>>::missing_ref().is_none());
+    assert!(<[u32; 0] as Decode<&mut [u8]>>::missing_ref()
         .unwrap()
         .is_empty());
+
+    #[derive(Codec)]
+    struct Integers {
+        words: [u32; 2],
+        samples: Vec<u16>,
+    }
+
+    let integers = Integers::decode_bytes_ref(&[0][..]).unwrap();
+    assert_eq!(*integers.words, [0, 0]);
+    assert!(integers.samples.is_empty());
 }
 
 #[test]

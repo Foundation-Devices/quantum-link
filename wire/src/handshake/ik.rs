@@ -1,6 +1,6 @@
 use std::borrow::Borrow;
 
-use ql_codec::Encode;
+use ql_codec::{Encode, Output, Writer};
 
 use super::{
     decrypt_mlkem_ciphertext, decrypt_peer_bundle, encrypt_mlkem_ciphertext, encrypt_peer_bundle,
@@ -35,7 +35,7 @@ impl Encode for Ik1 {
                 .map_or(0, EncryptedPeerBundle::encoded_len)
     }
 
-    fn encode<W: ::bytes::BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         self.handshake_id.encode(out);
         self.transport_params.encode(out);
         self.skem_ciphertext.encode(out);

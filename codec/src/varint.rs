@@ -1,8 +1,6 @@
 use core::{fmt, ops::Deref};
 
-use bytes::BufMut;
-
-use crate::{ByteSlice, DecodeValue, Element, Encode, Error, Reader};
+use crate::{ByteSlice, DecodeValue, Element, Encode, Error, Output, Reader, Writer};
 
 /// An integer field carried as a varint
 ///
@@ -47,7 +45,7 @@ impl<T: Primitive> Encode for Varint<T> {
         encoded_len(self.0)
     }
 
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         encode(self.0, out);
     }
 }
@@ -73,11 +71,7 @@ pub fn encoded_len<T: Primitive>(mut value: T) -> usize {
     len
 }
 
-pub fn encode<T, W>(mut value: T, out: &mut W)
-where
-    T: Primitive,
-    W: BufMut + ?Sized,
-{
+pub fn encode<T: Primitive>(mut value: T, out: &mut Writer<impl Output>) {
     while value.needs_more() {
         out.put_u8(value.low_7_bits() | 0x80);
         value = value.shr_7();
@@ -158,8 +152,9 @@ mod tests {
     where
         T: Primitive + Debug + PartialEq,
     {
-        let mut out = Vec::new();
+        let mut out = Writer::new(Vec::new());
         encode(value, &mut out);
+        let out = out.into_inner();
         assert_eq!(out.len(), encoded_len(value));
         let mut reader = Reader::new(out.as_slice());
         assert_eq!(decode(&mut reader), Ok(value));
@@ -190,9 +185,10 @@ mod tests {
         }
         assert_decodes(max);
 
-        let mut encoded = Vec::new();
+        let mut encoded = Writer::new(Vec::new());
         encode(T::from_u8(127), &mut encoded);
-        encoded.push(0x55);
+        encoded.put_u8(0x55);
+        let encoded = encoded.into_inner();
         let mut reader = Reader::new(encoded.as_slice());
         assert_eq!(decode(&mut reader), Ok(T::from_u8(127)));
         assert_eq!(reader.take_all(), &[0x55]);

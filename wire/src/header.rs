@@ -1,5 +1,4 @@
-use ::bytes::BufMut;
-use ql_codec::Encode;
+use ql_codec::{Encode, Writer};
 use ql_common::QID;
 
 use crate::QL_WIRE_VERSION;
@@ -39,13 +38,13 @@ impl SessionHeader {
             + size_of::<u8>()
             + route.encoded_len()
             + self.seq.encoded_len();
-        let mut aad = Vec::with_capacity(aad_len);
+        let mut aad = Writer::new(Vec::with_capacity(aad_len));
         aad.put_slice(Self::AAD_DOMAIN);
         aad.put_u8(QL_WIRE_VERSION);
         aad.put_u8(Self::AAD_RECORD_KIND_SESSION);
         route.encode(&mut aad);
         self.seq.encode(&mut aad);
-        debug_assert_eq!(aad.len(), aad_len);
-        aad
+        debug_assert_eq!(aad.position(), aad_len);
+        aad.into_inner()
     }
 }

@@ -1,6 +1,6 @@
 //! authenticated QuantumLink handshake patterns
 
-use ql_codec::{Decode, Encode};
+use ql_codec::{Decode, Encode, Output, Writer};
 
 use crate::{
     Error, HandshakeKind, MlKemCiphertext, MlKemKeyPair, MlKemPublicKey, Nonce, PeerBundle,
@@ -60,7 +60,7 @@ impl Encode for EncryptedPeerBundle {
         self.0.len()
     }
 
-    fn encode<W: ::bytes::BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         out.put_slice(self.as_bytes());
     }
 }
@@ -292,8 +292,7 @@ fn mix_hash_pairing_handshake(
     pairing_id: PairingId,
     transport_params: TransportParams,
 ) {
-    let mut preamble = header.encode_vec();
-    pairing_id.encode(&mut preamble);
+    let preamble = (header, pairing_id).encode_vec();
     mix_hash_handshake_preamble(
         symmetric,
         crypto,

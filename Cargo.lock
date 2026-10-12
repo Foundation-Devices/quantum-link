@@ -1312,7 +1312,6 @@ dependencies = [
 name = "ql-btp"
 version = "0.1.0"
 dependencies = [
- "bytes",
  "ql-codec",
 ]
 
@@ -1320,6 +1319,7 @@ dependencies = [
 name = "ql-codec"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "bytes",
  "ql-codec-macro",
 ]
@@ -1358,7 +1358,6 @@ dependencies = [
 name = "ql-keyos"
 version = "0.1.0"
 dependencies = [
- "bytes",
  "ql-codec",
  "ql-rpc",
  "serde",

@@ -4,7 +4,7 @@
 //! route keys pair these identifiers with [`RouteId`] for RPC dispatch
 //! [`PeerPermissions`] lists the apps a peer may access
 
-use ql_codec::{Encode, Reader};
+use ql_codec::{Encode, Reader, Writer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, ql_codec::Codec)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -89,9 +89,8 @@ impl ql_rpc::RpcRouteKey for ServiceRouteKey {
         self.service_id.encoded_len() + self.route_id.encoded_len()
     }
 
-    fn encode<W: bytes::BufMut + ?Sized>(&self, out: &mut W) {
-        self.service_id.encode(out);
-        self.route_id.encode(out);
+    fn encode(&self, out: &mut Vec<u8>) {
+        (self.service_id, self.route_id).encode(&mut Writer::new(out));
     }
 
     fn decode(bytes: &[u8]) -> Option<Self> {
@@ -115,9 +114,8 @@ impl ql_rpc::RpcRouteKey for AppRouteKey {
         self.app_id.encoded_len() + self.route_id.encoded_len()
     }
 
-    fn encode<W: bytes::BufMut + ?Sized>(&self, out: &mut W) {
-        self.app_id.encode(out);
-        self.route_id.encode(out);
+    fn encode(&self, out: &mut Vec<u8>) {
+        (self.app_id, self.route_id).encode(&mut Writer::new(out));
     }
 
     fn decode(bytes: &[u8]) -> Option<Self> {

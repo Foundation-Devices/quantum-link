@@ -7,7 +7,7 @@ use std::{
     task::{Context as TaskContext, Poll, Waker},
 };
 
-use bytes::{BufMut, Bytes};
+use bytes::Bytes;
 use ql_common::{ResetCode, StreamId, QID};
 
 use super::{download, duplex, notification, progress, request, subscription, upload};
@@ -190,8 +190,8 @@ impl RpcRouteKey for TestKey {
         1
     }
 
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
-        out.put_u8(self.0);
+    fn encode(&self, out: &mut Vec<u8>) {
+        out.push(self.0);
     }
 
     fn decode(bytes: &[u8]) -> Option<Self> {

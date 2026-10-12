@@ -1,5 +1,4 @@
-use bytes::BufMut;
-use ql_codec::{BufView, Encode, Varint};
+use ql_codec::{BufView, Encode, Varint, Writer};
 
 use super::{RecordAck, SessionClose, SessionFrame, StreamData, StreamReset, StreamWindow};
 use crate::{
@@ -118,21 +117,29 @@ impl SessionRecordBuilder {
             &mut self.bytes[self.prefix_len..],
         );
 
-        let mut prefix = &mut self.bytes[..self.prefix_len];
+        let mut prefix = Writer::new(&mut self.bytes[..self.prefix_len]);
         record_header.encode(&mut prefix);
         header.encode(&mut prefix);
         auth.encode(&mut prefix);
-        debug_assert!(prefix.is_empty());
+        debug_assert!(prefix.into_inner().is_empty());
         self.bytes
     }
 
-    fn push_wire_size(&mut self, wire_size: usize, encode: impl FnOnce(&mut Vec<u8>)) -> bool {
+    fn push_wire_size(
+        &mut self,
+        wire_size: usize,
+        encode: impl FnOnce(&mut Writer<&mut Vec<u8>>),
+    ) -> bool {
         if !self.can_push_len(wire_size) {
             return false;
         }
         self.ensure_prefix_capacity(wire_size);
         let start = self.bytes.len();
-        encode(&mut self.bytes);
+        // The frames are decoded from the start of the plaintext, after the prefix.
+        encode(&mut Writer::with_position(
+            &mut self.bytes,
+            start - self.prefix_len,
+        ));
         debug_assert_eq!(self.bytes.len(), start + wire_size);
         true
     }

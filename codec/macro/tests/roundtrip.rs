@@ -271,3 +271,76 @@ fn messages_roundtrip() {
         assert_eq!(seek.encode_vec()[0], seek.discriminant() as u8);
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Codec)]
+pub struct Samples {
+    pub name: String,
+    pub values: Vec<u32>,
+    pub sid: [u64; 2],
+}
+
+fn samples(name: &str) -> Samples {
+    Samples {
+        name: name.into(),
+        values: vec![1, u32::MAX, 3],
+        sid: [u64::MAX, 5],
+    }
+}
+
+#[repr(align(8))]
+struct AlignedBuffer([u8; 256]);
+
+/// `bytes` copied into a buffer aligned for any integer, `offset` bytes in
+fn copy_aligned(bytes: &[u8], offset: usize) -> AlignedBuffer {
+    let mut buffer = AlignedBuffer([0; 256]);
+    buffer.0[offset..][..bytes.len()].copy_from_slice(bytes);
+    buffer
+}
+
+#[test]
+fn integer_lists_are_lent_aligned() {
+    // Each name shifts the integers after it differently.
+    let list = Vec::from(["", "a", "ab", "abc"].map(samples));
+    let bytes = list.encode_vec();
+    let buffer = copy_aligned(&bytes, 0);
+    let encoding = &buffer.0[..bytes.len()];
+    let decoded = Vec::<Samples>::decode_bytes_ref(encoding).unwrap();
+
+    for (decoded, samples) in decoded.iter().zip(&list) {
+        let values: &[u32] = &decoded.values;
+        let sid: &[u64; 2] = &decoded.sid;
+        assert_eq!(values, samples.values);
+        assert_eq!(sid, &samples.sid);
+        assert!(encoding.as_ptr_range().contains(&values.as_ptr().cast()));
+        assert!(encoding.as_ptr_range().contains(&sid.as_ptr().cast()));
+    }
+    assert_eq!(decoded.encode_vec(), bytes);
+}
+
+#[test]
+fn mutable_integer_lists_change_the_encoding_in_place() {
+    let mut expected = samples("ab");
+    let bytes = expected.encode_vec();
+    let mut buffer = copy_aligned(&bytes, 0);
+    let encoding = &mut buffer.0[..bytes.len()];
+    let mut view = Samples::decode_bytes_ref(&mut *encoding).unwrap();
+    view.values.reverse();
+    view.sid[1] = 9;
+
+    expected.values.reverse();
+    expected.sid[1] = 9;
+    assert_eq!(Samples::decode_bytes(&*encoding).unwrap(), expected);
+}
+
+#[test]
+fn misaligned_integer_lists_are_only_copied() {
+    let samples = samples("ab");
+    let bytes = samples.encode_vec();
+    let buffer = copy_aligned(&bytes, 1);
+    let encoding = &buffer.0[1..][..bytes.len()];
+    assert!(matches!(
+        Samples::decode_bytes_ref(encoding),
+        Err(ql_codec::Error::InvalidAlignment)
+    ));
+    assert_eq!(Samples::decode_bytes(encoding).unwrap(), samples);
+}
