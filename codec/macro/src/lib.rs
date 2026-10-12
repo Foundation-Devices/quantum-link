@@ -21,12 +21,9 @@ fn derive_codec(item: syn::DeriveInput) -> Result<TokenStream, syn::Error> {
         ));
     }
     let options = Options::parse(&item.attrs)?;
+    // Named apart from everything in the item, or it would capture a type or parameter called `B`.
     let mut input = format_ident!("B");
-    while item.generics.params.iter().any(|param| match param {
-        syn::GenericParam::Type(param) => param.ident == input,
-        syn::GenericParam::Const(param) => param.ident == input,
-        syn::GenericParam::Lifetime(_) => false,
-    }) {
+    while mentions(quote!(#item), &input) {
         input = format_ident!("{input}_");
     }
     let ref_generics = ref_generics(&item, &input);
@@ -296,13 +293,6 @@ fn derive_struct(
     }
 }
 
-struct Variant<'a> {
-    ident: &'a syn::Ident,
-    attrs: &'a [syn::Attribute],
-    enumerator: u32,
-    fields: Fields<'a>,
-}
-
 fn derive_enum(
     item: &syn::DeriveInput,
     ref_generics: &syn::Generics,
@@ -314,9 +304,17 @@ fn derive_enum(
     let vis = &item.vis;
     let ref_ident = ref_ident(&item.ident);
 
-    let mut variants = Vec::new();
     let mut unknown = None;
     let mut next_enumerator = Some(0u32);
+    let mut borrows = false;
+    let mut ref_variants = TokenStream::new();
+    let mut encoded_len_arms = TokenStream::new();
+    let mut encode_arms = TokenStream::new();
+    let mut decode_arms = TokenStream::new();
+    let mut decode_ref_arms = TokenStream::new();
+    let mut from_ref_arms = TokenStream::new();
+    let mut discriminants = TokenStream::new();
+    let mut discriminant_arms = TokenStream::new();
     for variant in &data.variants {
         let enumerator = match &variant.discriminant {
             Some((_, discriminant)) => parse_enumerator(discriminant)?,
@@ -347,66 +345,43 @@ fn derive_enum(
             unknown = Some(&variant.ident);
         }
 
-        variants.push(Variant {
-            ident: &variant.ident,
-            attrs: &variant.attrs,
-            enumerator,
-            fields: Fields::new(&variant.fields, frozen, input)?,
-        });
-    }
-
-    let borrows = variants
-        .iter()
-        .any(|variant| !variant.fields.shape.is_empty());
-
-    let encoded_len_arms = variants.iter().map(|variant| {
-        let Variant {
-            ident,
-            enumerator,
-            fields,
-            ..
-        } = variant;
-        let cfg = cfg_attrs(variant.attrs);
+        let ident = &variant.ident;
+        let fields = Fields::new(&variant.fields, frozen, input)?;
+        let cfg: Vec<_> = cfg_attrs(&variant.attrs).collect();
+        let attrs = ref_attrs(&variant.attrs);
+        let shape = fields.ref_shape();
         let pattern = fields.pattern();
         let encoded_len = fields.encoded_len();
-        quote!(#(#cfg)* Self::#ident #pattern => ::ql_codec::varint::encoded_len(#enumerator) + #encoded_len,)
-    });
-    let encode_arms = variants.iter().map(|variant| {
-        let Variant {
-            ident,
-            enumerator,
-            fields,
-            ..
-        } = variant;
-        let cfg = cfg_attrs(variant.attrs);
-        let pattern = fields.pattern();
         let encode = fields.encode();
-        quote!(#(#cfg)* Self::#ident #pattern => {
+        let decode = fields.decode(&quote!(Self::#ident), Form::Owned);
+        let decode_ref = fields.decode(&quote!(Self::Ref::#ident), Form::Borrowed);
+        let owned = fields.owned(&quote!(Self::#ident));
+        borrows |= !variant.fields.is_empty();
+        ref_variants.extend(quote!(#(#attrs)* #ident #shape,));
+        encoded_len_arms.extend(quote!(#(#cfg)* Self::#ident #pattern => ::ql_codec::varint::encoded_len(#enumerator) + #encoded_len,));
+        encode_arms.extend(quote!(#(#cfg)* Self::#ident #pattern => {
             ::ql_codec::varint::encode(#enumerator, out);
             #encode
-        })
-    });
+        }));
+        decode_arms.extend(quote!(#(#cfg)* #enumerator => #decode,));
+        decode_ref_arms.extend(quote!(#(#cfg)* #enumerator => #decode_ref,));
+        from_ref_arms.extend(quote!(#(#cfg)* Self::Ref::#ident #pattern => #owned,));
+        if let Some(name) = &options.discriminants {
+            let enumerator = proc_macro2::Literal::u32_unsuffixed(enumerator);
+            discriminants.extend(quote!(#(#cfg)* #ident = #enumerator,));
+            discriminant_arms.extend(quote!(#(#cfg)* Self::#ident { .. } => #name::#ident,));
+        }
+    }
     // `match self {}` is rejected for a reference to an empty enum.
-    let scrutinee = if variants.is_empty() {
+    let scrutinee = if data.variants.is_empty() {
         quote!(*self)
     } else {
         quote!(self)
     };
 
     let decode_prelude = decode_prelude(frozen);
-    let decode = |form: Form| {
+    let decode = |form: Form, arms: TokenStream| {
         let path = form.path();
-        let arms = variants.iter().map(|variant| {
-            let Variant {
-                ident,
-                enumerator,
-                fields,
-                ..
-            } = variant;
-            let cfg = cfg_attrs(variant.attrs);
-            let value = fields.decode(&quote!(#path::#ident), form);
-            quote!(#(#cfg)* #enumerator => #value,)
-        });
         let unknown_arm = match unknown {
             Some(unknown) => quote!(_ => #path::#unknown {},),
             None => quote!(
@@ -417,52 +392,27 @@ fn derive_enum(
             let enumerator = reader.decode_varint::<u32>()?;
             #decode_prelude
             ::core::result::Result::Ok(match enumerator {
-                #(#arms)*
+                #arms
                 #unknown_arm
             })
         )
     };
 
-    let ref_variants = variants.iter().map(|variant| {
-        let attrs = ref_attrs(variant.attrs);
-        let ident = variant.ident;
-        let shape = variant.fields.ref_shape();
-        quote!(#(#attrs)* #ident #shape,)
-    });
-    let from_ref_arms = variants.iter().map(|variant| {
-        let Variant { ident, fields, .. } = variant;
-        let cfg = cfg_attrs(variant.attrs);
-        let pattern = fields.pattern();
-        let owned = fields.owned(&quote!(Self::#ident));
-        quote!(#(#cfg)* Self::Ref::#ident #pattern => #owned,)
-    });
-
     let discriminants = options.discriminants.as_ref().map(|name| {
         let ident = &item.ident;
         let (impl_generics, ty_generics, where_clause) = item.generics.split_for_impl();
         let doc = format!("[`{ident}`]'s variants without their fields, numbered by enumerator");
-        let discriminants = variants.iter().map(|variant| {
-            let cfg = cfg_attrs(variant.attrs);
-            let ident = variant.ident;
-            let enumerator = proc_macro2::Literal::u32_unsuffixed(variant.enumerator);
-            quote!(#(#cfg)* #ident = #enumerator,)
-        });
-        let arms = variants.iter().map(|variant| {
-            let cfg = cfg_attrs(variant.attrs);
-            let ident = variant.ident;
-            quote!(#(#cfg)* Self::#ident { .. } => #name::#ident,)
-        });
         quote!(
             #[doc = #doc]
             #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-            #vis enum #name { #(#discriminants)* }
+            #vis enum #name { #discriminants }
 
             impl #impl_generics #ident #ty_generics #where_clause {
                 /// The variant without its fields
                 #[allow(dead_code)]
                 #[inline]
                 #vis fn discriminant(&self) -> #name {
-                    match #scrutinee { #(#arms)* }
+                    match #scrutinee { #discriminant_arms }
                 }
             }
         )
@@ -470,12 +420,11 @@ fn derive_enum(
 
     let where_clause = &ref_generics.where_clause;
     Ok(Expansion {
-        ref_declaration: borrows.then(
-            || quote!(#vis enum #ref_ident #ref_generics #where_clause { #(#ref_variants)* }),
-        ),
-        decode_ref: decode(Form::Borrowed),
-        from_ref: quote!(match value { #(#from_ref_arms)* }),
-        decode: decode(Form::Owned),
+        ref_declaration: borrows
+            .then(|| quote!(#vis enum #ref_ident #ref_generics #where_clause { #ref_variants })),
+        decode_ref: decode(Form::Borrowed, decode_ref_arms),
+        from_ref: quote!(match value { #from_ref_arms }),
+        decode: decode(Form::Owned, decode_arms),
         missing: match unknown {
             Some(unknown) => quote!(::core::option::Option::Some(Self::Ref::#unknown {})),
             None => quote!(::core::option::Option::None),
@@ -484,8 +433,8 @@ fn derive_enum(
             Some(unknown) => quote!(::core::option::Option::Some(Self::#unknown {})),
             None => quote!(::core::option::Option::None),
         },
-        encoded_len: quote!(match #scrutinee { #(#encoded_len_arms)* }),
-        encode: quote!(match #scrutinee { #(#encode_arms)* }),
+        encoded_len: quote!(match #scrutinee { #encoded_len_arms }),
+        encode: quote!(match #scrutinee { #encode_arms }),
         discriminants: discriminants.unwrap_or_default(),
     })
 }
@@ -521,16 +470,7 @@ impl<'a> Fields<'a> {
 
     /// `{ a: field_0, 1: field_1 }` also matches tuple and unit shapes
     fn pattern(&self) -> TokenStream {
-        let fields = self.shape.iter().enumerate().map(|(index, field)| {
-            let member = field
-                .ident
-                .clone()
-                .map_or_else(|| syn::Member::Unnamed(index.into()), syn::Member::Named);
-            let binding = format_ident!("field_{index}");
-            let cfg = cfg_attrs(&field.attrs);
-            quote!(#(#cfg)* #member: #binding,)
-        });
-        quote!({ #(#fields)* })
+        self.construct(&quote!(), |_, binding| quote!(#binding))
     }
 
     /// length of the fields bound by [`Self::pattern`]
@@ -603,17 +543,17 @@ impl<'a> Fields<'a> {
     /// builds the owned value from the borrowed fields bound by [`Self::pattern`]
     fn owned(&self, path: &TokenStream) -> TokenStream {
         let input = self.input;
-        self.construct(path, |field, index| {
+        self.construct(path, |field, binding| {
             let ty = &field.ty;
-            let binding = format_ident!("field_{index}");
             quote!(<#ty as ::ql_codec::Decode<#input>>::from_ref(#binding))
         })
     }
 
+    /// `value(field, binding)` is the field's value, `binding` the name [`Self::pattern`] gives it
     fn construct(
         &self,
         path: &TokenStream,
-        value: impl Fn(&syn::Field, usize) -> TokenStream,
+        value: impl Fn(&syn::Field, &syn::Ident) -> TokenStream,
     ) -> TokenStream {
         let fields = self.shape.iter().enumerate().map(|(index, field)| {
             let member = field
@@ -621,7 +561,7 @@ impl<'a> Fields<'a> {
                 .clone()
                 .map_or_else(|| syn::Member::Unnamed(index.into()), syn::Member::Named);
             let cfg = cfg_attrs(&field.attrs);
-            let value = value(field, index);
+            let value = value(field, &format_ident!("field_{index}"));
             quote!(#(#cfg)* #member: #value,)
         });
         quote!(#path { #(#fields)* })
@@ -690,15 +630,21 @@ fn ref_ident(ident: &syn::Ident) -> syn::Ident {
     format_ident!("{ident}Ref")
 }
 
+/// Whether `ident` occurs anywhere in `tokens`
+fn mentions(tokens: TokenStream, ident: &syn::Ident) -> bool {
+    tokens.into_iter().any(|tree| match tree {
+        proc_macro2::TokenTree::Ident(other) => other == *ident,
+        proc_macro2::TokenTree::Group(group) => mentions(group.stream(), ident),
+        _ => false,
+    })
+}
+
 /// the input container followed by the type's own generics
 fn ref_generics(item: &syn::DeriveInput, input: &syn::Ident) -> syn::Generics {
     let mut generics = item.generics.clone();
     generics
         .params
         .insert(0, parse_quote!(#input: ::ql_codec::ByteSlice));
-    if item.generics.type_params().next().is_none() {
-        return generics;
-    }
     with_field_bounds(
         &generics,
         item,
@@ -713,7 +659,7 @@ fn with_field_bounds(
     bound: impl Fn(&syn::Type) -> syn::WherePredicate,
 ) -> syn::Generics {
     let mut generics = generics.clone();
-    if generics.type_params().next().is_none() {
+    if item.generics.type_params().next().is_none() {
         return generics;
     }
     let predicates = &mut generics.make_where_clause().predicates;

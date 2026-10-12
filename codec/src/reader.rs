@@ -1,4 +1,4 @@
-use crate::{varint, ByteSlice, Decode, Error, Ref};
+use crate::{varint, ByteSlice, Decode, Error};
 
 #[derive(Clone)]
 pub struct Reader<B> {
@@ -40,11 +40,6 @@ impl<B: ByteSlice> Reader<B> {
             return Err(Error::UnexpectedEof);
         }
         Ok(self.remaining.split_off_front(len))
-    }
-
-    #[inline]
-    pub fn take_array<const N: usize>(&mut self) -> Result<Ref<B, [u8; N]>, Error> {
-        Ref::new(self.take_n(N)?)
     }
 
     #[inline]

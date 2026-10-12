@@ -15,12 +15,8 @@ pub unsafe trait ByteSlice: Deref<Target = [u8]> + Sized {
     /// panics if `mid` exceeds the slice length
     fn split_off_front(&mut self, mid: usize) -> Self;
 
-    fn empty() -> Self;
-
-    /// backing storage for missing borrowed fields
-    fn from_static(bytes: &'static [u8]) -> Option<Self> {
-        bytes.is_empty().then(Self::empty)
-    }
+    /// backing storage for missing borrowed fields, which a mutable container only has when empty
+    fn from_static(bytes: &'static [u8]) -> Option<Self>;
 
     /// takes the first byte, if there is one
     fn take_u8(&mut self) -> Option<u8> {
@@ -35,10 +31,6 @@ unsafe impl ByteSlice for &[u8] {
         let (head, tail) = self.split_at(mid);
         *self = tail;
         head
-    }
-
-    fn empty() -> Self {
-        &[]
     }
 
     fn from_static(bytes: &'static [u8]) -> Option<Self> {
@@ -56,8 +48,8 @@ unsafe impl ByteSlice for &mut [u8] {
         head
     }
 
-    fn empty() -> Self {
-        &mut []
+    fn from_static(bytes: &'static [u8]) -> Option<Self> {
+        bytes.is_empty().then_some(&mut [])
     }
 }
 
@@ -68,10 +60,6 @@ unsafe impl ByteSlice for Bytes {
     #[inline]
     fn split_off_front(&mut self, mid: usize) -> Self {
         self.split_to(mid)
-    }
-
-    fn empty() -> Self {
-        Self::new()
     }
 
     fn from_static(bytes: &'static [u8]) -> Option<Self> {
@@ -92,12 +80,8 @@ unsafe impl ByteSlice for BytesMut {
         self.split_to(mid)
     }
 
-    fn empty() -> Self {
-        Self::new()
-    }
-
     fn from_static(bytes: &'static [u8]) -> Option<Self> {
-        Some(Self::from(bytes))
+        bytes.is_empty().then(Self::new)
     }
 
     // see `Bytes`

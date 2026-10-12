@@ -67,7 +67,7 @@ macro_rules! impl_codec {
 
                 #[inline]
                 fn missing_ref() -> Option<Self::Ref> {
-                    Ref::new(B::empty()).ok()
+                    Ref::new(B::from_static(&[])?).ok()
                 }
             }
         )*
@@ -134,7 +134,7 @@ impl<const N: usize> Encode for Box<[u8; N]> {
     }
 
     fn encode(&self, out: &mut Writer<impl Output>) {
-        out.put_slice(self.as_ref());
+        (**self).encode(out);
     }
 }
 
@@ -142,7 +142,7 @@ impl<B: ByteSlice, const N: usize> Decode<B> for Box<[u8; N]> {
     type Ref = Ref<B, [u8; N]>;
 
     fn decode_ref(reader: &mut Reader<B>) -> Result<Self::Ref, Error> {
-        reader.take_array()
+        <[u8; N]>::decode_ref(reader)
     }
 
     fn from_ref(value: Self::Ref) -> Self {
@@ -161,7 +161,7 @@ impl<B: ByteSlice, const N: usize> Decode<B> for Box<[u8; N]> {
     }
 
     fn missing_ref() -> Option<Self::Ref> {
-        Ref::new(B::from_static(&const { [0; N] })?).ok()
+        <[u8; N]>::missing_ref()
     }
 }
 
@@ -387,7 +387,7 @@ impl<B: ByteSlice> Decode<B> for String {
 
     #[inline]
     fn missing_ref() -> Option<Self::Ref> {
-        Ref::new(B::empty()).ok()
+        Ref::new(B::from_static(&[])?).ok()
     }
 }
 

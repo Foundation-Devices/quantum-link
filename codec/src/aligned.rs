@@ -110,7 +110,7 @@ macro_rules! impl_int {
 
                 #[inline]
                 fn missing_ref() -> Option<Self::Ref> {
-                    Ref::new(B::empty()).ok()
+                    Ref::new(B::from_static(&[])?).ok()
                 }
             }
 

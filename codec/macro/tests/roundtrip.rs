@@ -61,6 +61,15 @@ pub struct WriteFile {
 #[derive(Debug, Clone, PartialEq, Eq, Codec)]
 pub struct ListApps;
 
+/// Named like the borrowed form's input parameter, which it must not capture
+#[derive(Debug, Clone, PartialEq, Eq, Codec)]
+pub struct B(pub u32);
+
+#[derive(Debug, Clone, PartialEq, Eq, Codec)]
+pub struct Holder {
+    pub b: B,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Codec)]
 pub struct Transceive(pub (Vec<u8>, Vec<u8>, Duration));
 
@@ -257,6 +266,7 @@ fn generic_types_roundtrip() {
 #[test]
 fn messages_roundtrip() {
     roundtrip(&ListApps);
+    roundtrip(&Holder { b: B(7) });
     roundtrip(&Transceive((
         vec![0x00, 0xa4, 0x04, 0x00],
         vec![0x90, 0x00],
