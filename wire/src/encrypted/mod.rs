@@ -34,13 +34,13 @@ pub enum SessionFrame<B> {
     Unpair = 7,
 }
 
-impl<'a> SessionFrameRef<&'a [u8], Vec<u8>> {
-    fn map_bytes<C>(self, f: impl FnMut(&'a [u8]) -> C) -> SessionFrame<C> {
+impl SessionFrameRef<Bytes, Vec<u8>> {
+    fn into_frame(self) -> SessionFrame<Bytes> {
         match self {
             Self::Ping => SessionFrame::Ping,
             Self::Unpair => SessionFrame::Unpair,
             Self::Ack(frame) => SessionFrame::Ack(frame),
-            Self::StreamData(frame) => SessionFrame::StreamData(frame.map_bytes(f)),
+            Self::StreamData(frame) => SessionFrame::StreamData(frame),
             Self::StreamWindow(frame) => SessionFrame::StreamWindow(frame.into_owned()),
             Self::StreamReset(frame) => SessionFrame::StreamReset(frame.into_owned()),
             Self::Close(frame) => SessionFrame::Close(frame.into_owned()),
@@ -49,10 +49,9 @@ impl<'a> SessionFrameRef<&'a [u8], Vec<u8>> {
 }
 
 /// Parses the frames in `bytes`, slicing their stream data out of it without copying
-pub fn parse_session_frames(bytes: &Bytes) -> SessionFrameIter<'_> {
+pub fn parse_session_frames(bytes: &Bytes) -> SessionFrameIter {
     SessionFrameIter {
-        bytes,
-        reader: Reader::new(bytes.as_ref()),
+        reader: Reader::new(bytes.clone()),
     }
 }
 
@@ -66,12 +65,11 @@ pub fn decode_session_frames(bytes: &[u8]) -> Result<Vec<SessionFrame<Vec<u8>>>,
 }
 
 #[derive(Clone)]
-pub struct SessionFrameIter<'a> {
-    bytes: &'a Bytes,
-    reader: Reader<&'a [u8]>,
+pub struct SessionFrameIter {
+    reader: Reader<Bytes>,
 }
 
-impl Iterator for SessionFrameIter<'_> {
+impl Iterator for SessionFrameIter {
     type Item = Result<SessionFrame<Bytes>, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -79,12 +77,7 @@ impl Iterator for SessionFrameIter<'_> {
             return None;
         }
         let frame = self.reader.decode_ref::<SessionFrame<Vec<u8>>>();
-        // The decoder lends `&[u8]` out of `bytes`, which `slice_ref` turns back into `Bytes`.
-        Some(
-            frame
-                .map(|frame| frame.map_bytes(|data| self.bytes.slice_ref(data)))
-                .map_err(Into::into),
-        )
+        Some(frame.map(SessionFrameRef::into_frame).map_err(Into::into))
     }
 }
 

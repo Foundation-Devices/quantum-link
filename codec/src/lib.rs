@@ -47,15 +47,16 @@
 //! # }
 //! ```
 //!
-//! [`Reader`] accepts `&[u8]` or `&mut [u8]`. its `take_n`, `take_array`, `take_all`, and
-//! `take_len_prefixed` methods preserve that reference type, so a mutable reader lends
-//! disjoint mutable slices without copying. owned `decode` works with either input.
+//! [`Reader`] accepts `&[u8]`, `&mut [u8]`, `Bytes` or `BytesMut`. its `take_n`, `take_array`,
+//! `take_all`, and `take_len_prefixed` methods preserve that container type, so a mutable
+//! reader lends disjoint mutable slices, and `Bytes` shares its buffer, without copying. owned
+//! `decode` works with any input.
 //! borrowed `decode_ref` selects shared or mutable views from the input. the derive generates
 //! one `MessageRef<B>` for a type named `Message`, recursively preserving
 //! mutability for every borrowed field, including strings and byte arrays.
 //! scalars and storage for decoded collections remain owned. typed fields implement `Deref`,
 //! and implement `DerefMut` when the input container does. input may be borrowed or owned.
-//! `decode_bytes` and `decode_bytes_ref` also accept either slice type. pass `as_slice()` or
+//! `decode_bytes` and `decode_bytes_ref` also accept any of them. pass `as_slice()` or
 //! `as_mut_slice()` when starting with a vector or array.
 //!
 //! Decoding recurses once per level of nesting, so a type decoded from untrusted input must not

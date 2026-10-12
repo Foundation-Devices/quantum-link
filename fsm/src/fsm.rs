@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, time::Instant};
 
-use bytes::Bytes;
+use bytes::BytesMut;
 use ql_codec::Reader;
 use ql_common::StreamId;
 use ql_wire::{self as wire, QlCrypto, SessionCloseCode};
@@ -91,17 +91,12 @@ pub fn handle_connect_kk<M: StreamMeta>(
     handshake::handle_connect_kk(fsm, crypto)
 }
 
-pub fn receive<M: StreamMeta, B>(
+pub fn receive<M: StreamMeta>(
     fsm: &mut QlFsm<M>,
-    mut bytes: B,
+    bytes: BytesMut,
     crypto: &impl QlCrypto,
-) -> Result<bool, ReceiveError>
-where
-    B: AsRef<[u8]> + AsMut<[u8]> + Send + 'static,
-{
-    let buffer = bytes.as_mut();
-    let buffer_len = buffer.len();
-    let mut reader = Reader::new(buffer);
+) -> Result<bool, ReceiveError> {
+    let mut reader = Reader::new(bytes);
     let header: wire::RecordHeader = reader
         .decode()
         .map_err(|error| ReceiveError::wire(ReceiveStage::RecordHeader, error))?;
@@ -127,28 +122,24 @@ where
                 if header.route.sender != conn.transport.remote_qid {
                     return Err(ReceiveError::InvalidQid);
                 }
-                let (decrypted, seq) = {
+                let (plaintext, seq) = {
                     let record = reader
                         .decode_ref::<wire::QlSessionRecord<Vec<u8>>>()
                         .map_err(|error| ReceiveError::wire(ReceiveStage::SessionRecord, error))?;
                     if conn.session.is_replay(record.header.seq) {
                         return Ok(false);
                     }
-                    let session_header = record.header;
-                    let ciphertext_range = buffer_len - record.payload.ciphertext.len()..buffer_len;
-                    wire::decrypt_record(
+                    let plaintext = wire::decrypt_record(
                         crypto,
                         &header,
-                        &session_header,
+                        &record.header,
                         record.payload,
                         &conn.transport.rx_key,
                     )
                     .map_err(|error| ReceiveError::wire(ReceiveStage::SessionPayload, error))?;
-                    (ciphertext_range, session_header.seq)
+                    (plaintext.freeze(), record.header.seq)
                 };
 
-                let bytes = Bytes::from_owner(bytes);
-                let plaintext = bytes.slice(decrypted);
                 let frames = wire::parse_session_frames(&plaintext);
 
                 let mut emit = EventSink::new(events);

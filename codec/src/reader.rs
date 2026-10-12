@@ -36,7 +36,7 @@ impl<B: ByteSlice> Reader<B> {
 
     #[inline]
     pub fn take_u8(&mut self) -> Result<u8, Error> {
-        Ok(self.take_n(1)?[0])
+        self.remaining.take_u8().ok_or(Error::UnexpectedEof)
     }
 
     #[inline]

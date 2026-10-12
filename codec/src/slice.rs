@@ -1,5 +1,7 @@
 use core::{mem, ops::Deref};
 
+use bytes::{Buf, Bytes, BytesMut};
+
 /// bytes that retain their container type when split
 ///
 /// # Safety
@@ -18,6 +20,11 @@ pub unsafe trait ByteSlice: Deref<Target = [u8]> + Sized {
     /// backing storage for missing borrowed fields
     fn from_static(bytes: &'static [u8]) -> Option<Self> {
         bytes.is_empty().then(Self::empty)
+    }
+
+    /// takes the first byte, if there is one
+    fn take_u8(&mut self) -> Option<u8> {
+        (!self.is_empty()).then(|| self.split_off_front(1)[0])
     }
 }
 
@@ -51,5 +58,51 @@ unsafe impl ByteSlice for &mut [u8] {
 
     fn empty() -> Self {
         &mut []
+    }
+}
+
+// safety: the buffer lives on the heap, so moving its handle keeps the address, and splitting
+// leaves both halves' bytes in place. `Bytes` never modifies shared bytes, and `BytesMut` owns
+// its range exclusively.
+unsafe impl ByteSlice for Bytes {
+    #[inline]
+    fn split_off_front(&mut self, mid: usize) -> Self {
+        self.split_to(mid)
+    }
+
+    fn empty() -> Self {
+        Self::new()
+    }
+
+    fn from_static(bytes: &'static [u8]) -> Option<Self> {
+        Some(Self::from_static(bytes))
+    }
+
+    // not through `split_off_front`, which would count a reference for every byte
+    #[inline]
+    fn take_u8(&mut self) -> Option<u8> {
+        self.try_get_u8().ok()
+    }
+}
+
+// safety: see `Bytes`
+unsafe impl ByteSlice for BytesMut {
+    #[inline]
+    fn split_off_front(&mut self, mid: usize) -> Self {
+        self.split_to(mid)
+    }
+
+    fn empty() -> Self {
+        Self::new()
+    }
+
+    fn from_static(bytes: &'static [u8]) -> Option<Self> {
+        Some(Self::from(bytes))
+    }
+
+    // see `Bytes`
+    #[inline]
+    fn take_u8(&mut self) -> Option<u8> {
+        self.try_get_u8().ok()
     }
 }
