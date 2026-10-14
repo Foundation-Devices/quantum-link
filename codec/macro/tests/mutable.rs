@@ -3,7 +3,7 @@ use std::{
     hash::BuildHasher,
 };
 
-use ql_codec::{Codec, Decode, Encode, Error, Reader, Ref};
+use ql_codec::{Codec, Decode, Encode, Error, Reader, Ref, Target};
 
 #[derive(Debug, PartialEq, Codec)]
 enum Item<B> {
@@ -161,4 +161,45 @@ fn shared_views_derive_value_traits_and_fixed_refs_validate_length() {
         Ref::<_, [u8; 2]>::new(&bytes[..1]),
         Err(Error::InvalidData)
     ));
+}
+
+#[test]
+fn custom_targets_validate_elements() {
+    #[repr(u8)]
+    enum Switch {
+        Off,
+        On,
+    }
+
+    // safety: validation accepts exactly the valid discriminants and the layout has no padding
+    unsafe impl Target for Switch {
+        fn validate(bytes: &[u8]) -> Result<(), Error> {
+            <u8 as Target>::validate(bytes)?;
+            match bytes[0] {
+                0 | 1 => Ok(()),
+                _ => Err(Error::InvalidData),
+            }
+        }
+
+        unsafe fn from_bytes(bytes: &[u8]) -> &Self {
+            // safety: the caller checked the layout and discriminant
+            unsafe { &*bytes.as_ptr().cast() }
+        }
+
+        unsafe fn from_bytes_mut(bytes: &mut [u8]) -> &mut Self {
+            // safety: the caller checked the layout and discriminant and provides exclusive access
+            unsafe { &mut *bytes.as_mut_ptr().cast() }
+        }
+    }
+
+    assert!(matches!(
+        Ref::<_, [[Switch; 2]; 1]>::new(&[0, 2][..]),
+        Err(Error::InvalidData)
+    ));
+
+    let mut bytes = [0, 1];
+    let mut view = Ref::<_, [Switch]>::new(&mut bytes[..]).unwrap();
+    view[0] = Switch::On;
+    view[1] = Switch::Off;
+    assert_eq!(view.into_bytes(), &[1, 0]);
 }

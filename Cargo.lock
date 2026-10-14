@@ -1319,7 +1319,6 @@ dependencies = [
 name = "ql-codec"
 version = "0.1.0"
 dependencies = [
- "bytemuck",
  "bytes",
  "ql-codec-macro",
 ]

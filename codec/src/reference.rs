@@ -6,13 +6,11 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
-use bytemuck::{Pod, PodCastError};
-
 use crate::{BufView, ByteSlice, Element, Encode, Error, Output, Writer};
 
 /// a validated typed reference with the mutability of its byte container
 ///
-/// supports strings and fixed width integer slices and arrays. mutable access preserves
+/// supports strings and other layouts implementing Target. mutable access preserves
 /// the length and validity of the encoding.
 ///
 /// shared storage cannot be mutated through the typed reference
@@ -183,11 +181,27 @@ impl<B: ByteSlice, T: Target + Hash + ?Sized> Hash for Ref<B, T> {
 ///
 /// # Safety
 ///
-/// successful validation must make both casts sound. typed writes must leave every byte
-/// initialized and preserve the validity of later casts.
+/// the type must have no padding and shared access must not modify its bytes. casts must
+/// borrow the input bytes in the type's native layout. validation must check size, alignment
+/// and contents so both casts are sound. typed writes must initialize every byte and preserve
+/// validity. the flag must only be true if every bit pattern is valid.
+/// callers of the casts must provide validated bytes. mutable casts additionally require
+/// exclusive access.
 pub unsafe trait Target {
+    /// allows containers to skip element validation after checking layout
+    const ANY_BIT_PATTERN: bool = false;
+
+    /// checks the native size, alignment and contents
     fn validate(bytes: &[u8]) -> Result<(), Error>;
+
+    /// # Safety
+    ///
+    /// `bytes` must have passed [`Self::validate`]
     unsafe fn from_bytes(bytes: &[u8]) -> &Self;
+
+    /// # Safety
+    ///
+    /// `bytes` must have passed [`Self::validate`] and be exclusively borrowed
     unsafe fn from_bytes_mut(bytes: &mut [u8]) -> &mut Self;
 }
 
@@ -210,60 +224,124 @@ unsafe impl Target for str {
     }
 }
 
-// safety: bytemuck checks the size and alignment of every cast
-unsafe impl<T: Pod> Target for [T] {
+// safety: validation checks the layout and each element's contents when required
+unsafe impl<T: Target> Target for [T] {
+    const ANY_BIT_PATTERN: bool = T::ANY_BIT_PATTERN;
+
     fn validate(bytes: &[u8]) -> Result<(), Error> {
         if bytes.is_empty() {
             return Ok(());
         }
-        bytemuck::try_cast_slice::<u8, T>(bytes)
-            .map(drop)
-            .map_err(|error| match error {
-                PodCastError::TargetAlignmentGreaterAndInputNotAligned => Error::InvalidAlignment,
-                _ => Error::InvalidData,
-            })
+        if size_of::<T>() == 0 {
+            return Err(Error::InvalidData);
+        }
+        if !bytes.as_ptr().cast::<T>().is_aligned() {
+            return Err(Error::InvalidAlignment);
+        }
+        if bytes.len() % size_of::<T>() != 0 {
+            return Err(Error::InvalidData);
+        }
+        if !T::ANY_BIT_PATTERN {
+            for bytes in bytes.chunks_exact(size_of::<T>()) {
+                T::validate(bytes)?;
+            }
+        }
+        Ok(())
     }
 
     unsafe fn from_bytes(bytes: &[u8]) -> &Self {
-        cast(bytes)
+        if bytes.is_empty() {
+            return &[];
+        }
+        // safety: the caller validated length and alignment and each element's contents
+        unsafe { core::slice::from_raw_parts(bytes.as_ptr().cast(), bytes.len() / size_of::<T>()) }
     }
 
     unsafe fn from_bytes_mut(bytes: &mut [u8]) -> &mut Self {
-        cast_mut(bytes)
+        if bytes.is_empty() {
+            return &mut [];
+        }
+        // safety: the caller provides exclusive bytes with validated length and alignment
+        unsafe {
+            core::slice::from_raw_parts_mut(bytes.as_mut_ptr().cast(), bytes.len() / size_of::<T>())
+        }
     }
 }
 
 // safety: see `[T]`, and validation additionally checks the fixed array length
-unsafe impl<T: Pod, const N: usize> Target for [T; N] {
+unsafe impl<T: Target, const N: usize> Target for [T; N] {
+    const ANY_BIT_PATTERN: bool = N == 0 || T::ANY_BIT_PATTERN;
+
     fn validate(bytes: &[u8]) -> Result<(), Error> {
         if bytes.len() != size_of::<Self>() {
             return Err(Error::InvalidData);
+        }
+        if N != 0 && size_of::<T>() == 0 && !T::ANY_BIT_PATTERN {
+            return T::validate(bytes);
         }
         <[T] as Target>::validate(bytes)
     }
 
     unsafe fn from_bytes(bytes: &[u8]) -> &Self {
-        cast(bytes).try_into().expect("validated length")
+        let ptr = if bytes.is_empty() {
+            core::ptr::NonNull::<Self>::dangling().as_ptr()
+        } else {
+            bytes.as_ptr().cast::<Self>()
+        };
+        // safety: validation ensures an aligned array layout and empty bytes mean zero size
+        unsafe { &*ptr }
     }
 
     unsafe fn from_bytes_mut(bytes: &mut [u8]) -> &mut Self {
-        cast_mut(bytes).try_into().expect("validated length")
+        let ptr = if bytes.is_empty() {
+            core::ptr::NonNull::<Self>::dangling().as_ptr()
+        } else {
+            bytes.as_mut_ptr().cast::<Self>()
+        };
+        // safety: the array layout is validated and exclusively borrowed or has zero size
+        unsafe { &mut *ptr }
     }
 }
 
-/// `bytes` as `T`s, which they must hold exactly and aligned
-fn cast<T: Pod>(bytes: &[u8]) -> &[T] {
-    // an empty slice may sit at any address, but there's nothing to cast
-    if bytes.is_empty() {
-        return &[];
-    }
-    bytemuck::cast_slice(bytes)
+macro_rules! impl_target {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            // safety: these primitive layouts have no padding and accept every bit pattern
+            unsafe impl Target for $ty {
+                const ANY_BIT_PATTERN: bool = true;
+
+                fn validate(bytes: &[u8]) -> Result<(), Error> {
+                    <[Self; 1] as Target>::validate(bytes)
+                }
+
+                unsafe fn from_bytes(bytes: &[u8]) -> &Self {
+                    // safety: the caller provides the validated primitive layout
+                    unsafe { &*bytes.as_ptr().cast() }
+                }
+
+                unsafe fn from_bytes_mut(bytes: &mut [u8]) -> &mut Self {
+                    // safety: the caller provides the validated primitive layout exclusively
+                    unsafe { &mut *bytes.as_mut_ptr().cast() }
+                }
+            }
+        )*
+    };
 }
 
-/// see [`cast`]
-fn cast_mut<T: Pod>(bytes: &mut [u8]) -> &mut [T] {
-    if bytes.is_empty() {
-        return &mut [];
-    }
-    bytemuck::cast_slice_mut(bytes)
-}
+impl_target!(
+    u8,
+    u16,
+    u32,
+    u64,
+    u128,
+    usize,
+    i8,
+    i16,
+    i32,
+    i64,
+    i128,
+    isize,
+    f32,
+    f64,
+    ()
+);
