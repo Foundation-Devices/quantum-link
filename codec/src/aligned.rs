@@ -1,8 +1,6 @@
-use bytemuck::Pod;
-
 use crate::{
     codec::len_prefix, varint, ByteSlice, Decode, Element, Encode, Error, Output, Reader, Ref,
-    Writer,
+    Target, Writer,
 };
 
 #[cfg(target_endian = "big")]
@@ -19,19 +17,19 @@ fn padding(position: usize, size: usize) -> usize {
 /// `size_of::<T>() - 1` zeros surround them, enough before to align them and the rest after, so
 /// the length doesn't depend on where they're encoded.
 #[inline]
-fn encoded_len_ints<T: Pod>(len: usize) -> usize {
+fn encoded_len_ints<T>(len: usize) -> usize {
     size_of::<T>() - 1 + len * size_of::<T>()
 }
 
-fn encode_ints<T: Pod>(items: &[T], out: &mut Writer<impl Output>) {
+fn encode_ints<T: Target>(items: &[T], out: &mut Writer<impl Output>) {
     let padding = padding(out.position(), size_of::<T>());
     out.put_zeros(padding);
-    out.put_slice(bytemuck::cast_slice(items));
+    out.put_slice(as_bytes(items));
     out.put_zeros(size_of::<T>() - 1 - padding);
 }
 
 /// Takes the bytes of `len` integers of type `T`, skipping the zeros around them
-fn take_ints<T: Pod, B: ByteSlice>(reader: &mut Reader<B>, len: usize) -> Result<B, Error> {
+fn take_ints<T, B: ByteSlice>(reader: &mut Reader<B>, len: usize) -> Result<B, Error> {
     let size = size_of::<T>();
     let padding = padding(reader.position(), size);
     reader.take_n(padding)?;
@@ -40,22 +38,26 @@ fn take_ints<T: Pod, B: ByteSlice>(reader: &mut Reader<B>, len: usize) -> Result
     Ok(bytes)
 }
 
-fn take_list<T: Pod, B: ByteSlice>(reader: &mut Reader<B>) -> Result<B, Error> {
+fn take_list<T, B: ByteSlice>(reader: &mut Reader<B>) -> Result<B, Error> {
     let len = reader.decode_varint::<u32>()?;
     take_ints::<T, B>(reader, len as usize)
 }
 
 /// Copies integers out of `bytes`, which needn't be aligned
-fn copy_ints<T: Pod>(bytes: &[u8]) -> Vec<T> {
-    let mut items = vec![T::zeroed(); bytes.len() / size_of::<T>()];
-    bytemuck::cast_slice_mut(&mut items).copy_from_slice(bytes);
+fn copy_ints<T: Target + Copy>(bytes: &[u8]) -> Vec<T> {
+    const { assert!(T::ANY_BIT_PATTERN) };
+    // safety: the flag guarantees that zero and the copied bytes are valid
+    let mut items = vec![unsafe { core::mem::zeroed() }; bytes.len() / size_of::<T>()];
+    as_bytes_mut(&mut items).copy_from_slice(bytes);
     items
 }
 
 /// See [`copy_ints`]
-fn copy_int_array<T: Pod, const N: usize>(bytes: &[u8]) -> [T; N] {
-    let mut items = [T::zeroed(); N];
-    bytemuck::cast_slice_mut(&mut items).copy_from_slice(bytes);
+fn copy_int_array<T: Target + Copy, const N: usize>(bytes: &[u8]) -> [T; N] {
+    const { assert!(T::ANY_BIT_PATTERN) };
+    // safety: the flag guarantees that zero and the copied bytes are valid
+    let mut items = [unsafe { core::mem::zeroed() }; N];
+    as_bytes_mut(&mut items).copy_from_slice(bytes);
     items
 }
 
@@ -152,7 +154,7 @@ macro_rules! impl_int {
 
                 #[inline]
                 fn missing_ref() -> Option<Self::Ref> {
-                    let zeros = bytemuck::cast_slice::<$ty, u8>(&const { [0; N] });
+                    let zeros = as_bytes::<$ty>(&const { [0; N] });
                     Ref::new(B::from_static(zeros)?).ok()
                 }
             }
@@ -163,3 +165,14 @@ macro_rules! impl_int {
 }
 
 impl_int!(u8, u16, u32, u64, i8, i16, i32, i64);
+
+fn as_bytes<T: Target>(items: &[T]) -> &[u8] {
+    // safety: Target has no padding and the slice covers exactly its initialized bytes
+    unsafe { core::slice::from_raw_parts(items.as_ptr().cast(), size_of_val(items)) }
+}
+
+fn as_bytes_mut<T: Target>(items: &mut [T]) -> &mut [u8] {
+    const { assert!(T::ANY_BIT_PATTERN) };
+    // safety: the flag permits arbitrary bytes and the slice is exclusively borrowed
+    unsafe { core::slice::from_raw_parts_mut(items.as_mut_ptr().cast(), size_of_val(items)) }
+}

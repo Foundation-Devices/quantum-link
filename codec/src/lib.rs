@@ -75,7 +75,7 @@ pub use error::Error;
 #[cfg(feature = "derive")]
 pub use ql_codec_macro::Codec;
 pub use reader::Reader;
-pub use reference::Ref;
+pub use reference::{Ref, Target};
 pub use slice::ByteSlice;
 pub use varint::Varint;
 pub use writer::{Output, Writer};
