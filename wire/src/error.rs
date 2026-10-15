@@ -3,6 +3,7 @@ use core::fmt;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     // codec errors
+    InvalidAlignment,
     UnexpectedEof,
     InvalidData,
     InvalidDiscriminant,
@@ -28,6 +29,7 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self {
+            Self::InvalidAlignment => "invalid alignment",
             Self::UnexpectedEof => "unexpected end of input",
             Self::InvalidData => "invalid data",
             Self::InvalidDiscriminant => "invalid discriminant",
@@ -53,6 +55,7 @@ impl std::error::Error for Error {}
 impl From<ql_codec::Error> for Error {
     fn from(error: ql_codec::Error) -> Self {
         match error {
+            ql_codec::Error::InvalidAlignment => Self::InvalidAlignment,
             ql_codec::Error::InvalidData => Self::InvalidData,
             ql_codec::Error::UnexpectedEof => Self::UnexpectedEof,
             ql_codec::Error::InvalidDiscriminant => Self::InvalidDiscriminant,

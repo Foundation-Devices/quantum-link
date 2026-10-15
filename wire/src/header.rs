@@ -1,22 +1,19 @@
-use ::bytes::BufMut;
-use ql_codec::Encode;
+use ql_codec::{Encode, Writer};
 use ql_common::QID;
 
 use crate::QL_WIRE_VERSION;
 
-ql_codec::codec! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct RouteHeader {
-        pub sender: QID,
-        pub recipient: QID,
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ql_codec::Codec)]
+#[codec(frozen)]
+pub struct RouteHeader {
+    pub sender: QID,
+    pub recipient: QID,
 }
 
-ql_codec::codec! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct SessionHeader {
-        pub seq: RecordSeq,
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ql_codec::Codec)]
+#[codec(frozen)]
+pub struct SessionHeader {
+    pub seq: RecordSeq,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -41,13 +38,13 @@ impl SessionHeader {
             + size_of::<u8>()
             + route.encoded_len()
             + self.seq.encoded_len();
-        let mut aad = Vec::with_capacity(aad_len);
+        let mut aad = Writer::new(Vec::with_capacity(aad_len));
         aad.put_slice(Self::AAD_DOMAIN);
         aad.put_u8(QL_WIRE_VERSION);
         aad.put_u8(Self::AAD_RECORD_KIND_SESSION);
         route.encode(&mut aad);
         self.seq.encode(&mut aad);
-        debug_assert_eq!(aad.len(), aad_len);
-        aad
+        debug_assert_eq!(aad.position(), aad_len);
+        aad.into_inner()
     }
 }

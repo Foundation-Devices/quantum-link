@@ -5,8 +5,6 @@
 //! route dispatch uses caller-defined route keys and the submodules provide the
 //! matching client and server helpers for encoding, decoding, and handler glue
 
-use bytes::BufMut;
-
 pub mod download;
 pub mod duplex;
 pub mod notification;
@@ -22,7 +20,7 @@ mod utils;
 pub trait RpcRouteKey: Sized + std::fmt::Debug + Ord + Clone + 'static {
     fn encoded_len(&self) -> usize;
 
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W);
+    fn encode(&self, out: &mut Vec<u8>);
 
     fn decode(bytes: &[u8]) -> Option<Self>;
 }

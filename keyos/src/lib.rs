@@ -4,12 +4,13 @@
 //! route keys pair these identifiers with [`RouteId`] for RPC dispatch
 //! [`PeerPermissions`] lists the apps a peer may access
 
-use ql_codec::{ByteSlice, Decode, Encode, Reader};
+use ql_codec::{Encode, Reader, Writer};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, ql_codec::Codec)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[codec(frozen)]
 #[repr(transparent)]
-pub struct AppId(pub [u8; Self::SIZE]);
+pub struct AppId(pub [u8; AppId::SIZE]);
 
 impl AppId {
     pub const SIZE: usize = 16;
@@ -36,22 +37,6 @@ impl AppId {
         }
 
         Self(app_id)
-    }
-}
-
-impl Encode for AppId {
-    fn encoded_len(&self) -> usize {
-        Self::SIZE
-    }
-
-    fn encode<W: bytes::BufMut + ?Sized>(&self, out: &mut W) {
-        self.0.encode(out);
-    }
-}
-
-impl<B: ByteSlice> Decode<B> for AppId {
-    fn decode(reader: &mut Reader<B>) -> Result<Self, ql_codec::Error> {
-        Ok(Self(reader.decode()?))
     }
 }
 
@@ -104,9 +89,8 @@ impl ql_rpc::RpcRouteKey for ServiceRouteKey {
         self.service_id.encoded_len() + self.route_id.encoded_len()
     }
 
-    fn encode<W: bytes::BufMut + ?Sized>(&self, out: &mut W) {
-        self.service_id.encode(out);
-        self.route_id.encode(out);
+    fn encode(&self, out: &mut Vec<u8>) {
+        (self.service_id, self.route_id).encode(&mut Writer::new(out));
     }
 
     fn decode(bytes: &[u8]) -> Option<Self> {
@@ -130,9 +114,8 @@ impl ql_rpc::RpcRouteKey for AppRouteKey {
         self.app_id.encoded_len() + self.route_id.encoded_len()
     }
 
-    fn encode<W: bytes::BufMut + ?Sized>(&self, out: &mut W) {
-        self.app_id.encode(out);
-        self.route_id.encode(out);
+    fn encode(&self, out: &mut Vec<u8>) {
+        (self.app_id, self.route_id).encode(&mut Writer::new(out));
     }
 
     fn decode(bytes: &[u8]) -> Option<Self> {

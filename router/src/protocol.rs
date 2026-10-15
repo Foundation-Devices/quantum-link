@@ -2,7 +2,7 @@
 
 use std::{fmt, io};
 
-use ql_codec::{codec, Decode, Encode, Reader};
+use ql_codec::{Decode, Encode, Reader, Writer};
 use ql_common::QID;
 use ql_wire::{
     Ik1, Ik2, Nonce, QlAead, QlHandshakeRecord, QlHash, QlRandom, RecordHeader, SessionKey,
@@ -71,64 +71,59 @@ impl From<Error> for io::Error {
     }
 }
 
-codec! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub enum PacketKind {
-        Confirm = 1,
-        Attach = 2,
-        Record = 3,
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ql_codec::Codec)]
+#[codec(frozen)]
+pub enum PacketKind {
+    Confirm = 1,
+    Attach = 2,
+    Record = 3,
 }
 
-codec! {
-    pub struct TransportResponse {
-        pub header: RecordHeader,
-        pub handshake: QlHandshakeRecord,
-    }
+#[derive(ql_codec::Codec)]
+#[codec(frozen)]
+pub struct TransportResponse {
+    pub header: RecordHeader,
+    pub handshake: QlHandshakeRecord,
 }
 
-codec! {
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub enum AttachRecord as AttachKind {
-        Initiate(Ik1) = 1,
-        Challenge(AttachChallenge) = 2,
-        Confirm(AttachConfirm) = 3,
-    }
+#[derive(Debug, Clone, PartialEq, Eq, ql_codec::Codec)]
+#[codec(frozen)]
+#[repr(u8)]
+pub enum AttachRecord {
+    Initiate(Ik1) = 1,
+    Challenge(AttachChallenge) = 2,
+    Confirm(AttachConfirm) = 3,
 }
 
-codec! {
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct AttachChallenge {
-        pub handshake: Ik2,
-        pub cookie: AttachCookie,
-    }
+#[derive(Debug, Clone, PartialEq, Eq, ql_codec::Codec)]
+#[codec(frozen)]
+pub struct AttachChallenge {
+    pub handshake: Ik2,
+    pub cookie: AttachCookie,
 }
 
-codec! {
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct AttachConfirm {
-        pub cookie: AttachCookie,
-        pub tag: [u8; ENCRYPTED_MESSAGE_AUTH_SIZE],
-    }
+#[derive(Debug, Clone, PartialEq, Eq, ql_codec::Codec)]
+#[codec(frozen)]
+pub struct AttachConfirm {
+    pub cookie: AttachCookie,
+    pub tag: [u8; ENCRYPTED_MESSAGE_AUTH_SIZE],
 }
 
-codec! {
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct AttachCookie {
-        pub nonce: Nonce,
-        pub ciphertext: [u8; COOKIE_STATE_SIZE],
-        pub tag: [u8; ENCRYPTED_MESSAGE_AUTH_SIZE],
-    }
+#[derive(Debug, Clone, PartialEq, Eq, ql_codec::Codec)]
+#[codec(frozen)]
+pub struct AttachCookie {
+    pub nonce: Nonce,
+    pub ciphertext: [u8; COOKIE_STATE_SIZE],
+    pub tag: [u8; ENCRYPTED_MESSAGE_AUTH_SIZE],
 }
 
-ql_codec::codec! {
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    struct CookieState {
-        qid: QID,
-        key: SessionKey,
-        connection_id: u64,
-        expires_at: u64,
-    }
+#[derive(Debug, Clone, PartialEq, Eq, ql_codec::Codec)]
+#[codec(frozen)]
+struct CookieState {
+    qid: QID,
+    key: SessionKey,
+    connection_id: u64,
+    expires_at: u64,
 }
 
 pub fn seal_cookie(
@@ -148,7 +143,7 @@ pub fn seal_cookie(
         connection_id,
         expires_at,
     }
-    .encode(&mut encoded.as_mut_slice());
+    .encode(&mut Writer::new(encoded.as_mut_slice()));
     let tag = crypto.aes256_gcm_encrypt(key, &nonce, COOKIE_DOMAIN, &mut encoded);
     AttachCookie {
         nonce,
@@ -275,8 +270,7 @@ pub fn seal_packet_into(
         .ok_or(Error::FrameTooLarge)?;
     packet.clear();
     packet.reserve(FRAME_HEADER_SIZE + length);
-    (length as u32).encode(packet);
-    kind.encode(packet);
+    (length as u32, kind).encode(&mut Writer::new(&mut *packet));
     packet.extend_from_slice(payload);
     let tag = crypto.aes256_gcm_encrypt(key, &Nonce::from_counter(nonce), packet, &mut []);
     packet.extend_from_slice(&tag);
@@ -354,7 +348,7 @@ pub async fn write_frame(writer: &mut (impl AsyncWrite + Unpin), payload: &[u8])
         return Err(Error::FrameTooLarge.into());
     }
     let mut header = [0; FRAME_HEADER_SIZE];
-    (payload.len() as u32).encode(&mut header.as_mut_slice());
+    (payload.len() as u32).encode(&mut Writer::new(header.as_mut_slice()));
     writer.write_all(&header).await?;
     writer.write_all(payload).await
 }

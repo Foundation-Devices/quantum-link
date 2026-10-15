@@ -1,8 +1,6 @@
 use core::{fmt, ops::Deref};
 
-use bytes::BufMut;
-
-use crate::{ByteSlice, Decode, Encode, Error, Reader};
+use crate::{ByteSlice, DecodeValue, Element, Encode, Error, Output, Reader, Writer};
 
 /// An integer field carried as a varint
 ///
@@ -14,12 +12,13 @@ pub struct Varint<T>(pub T);
 
 pub trait Primitive: Copy {
     const MAX_ENCODED_LEN: usize;
+    const LAST_PAYLOAD_MAX: u8;
 
     fn from_u8(value: u8) -> Self;
     fn low_7_bits(self) -> u8;
     fn shr_7(self) -> Self;
     fn needs_more(self) -> bool;
-    fn checked_add_payload(self, payload: u8, shift: usize) -> Option<Self>;
+    fn add_payload(self, payload: u8, shift: usize) -> Self;
 }
 
 impl<T: Primitive> Varint<T> {
@@ -46,16 +45,22 @@ impl<T: Primitive> Encode for Varint<T> {
         encoded_len(self.0)
     }
 
-    fn encode<W: BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         encode(self.0, out);
     }
 }
 
-impl<B: ByteSlice, T: Primitive> Decode<B> for Varint<T> {
-    fn decode(reader: &mut Reader<B>) -> Result<Self, Error> {
+impl<T: Primitive> DecodeValue for Varint<T> {
+    fn decode_value<B: ByteSlice>(reader: &mut Reader<B>) -> Result<Self, Error> {
         self::decode(reader).map(Self)
     }
+
+    fn missing() -> Option<Self> {
+        Some(Self(T::from_u8(0)))
+    }
 }
+
+impl<T> Element for Varint<T> {}
 
 pub fn encoded_len<T: Primitive>(mut value: T) -> usize {
     let mut len = 1;
@@ -66,11 +71,7 @@ pub fn encoded_len<T: Primitive>(mut value: T) -> usize {
     len
 }
 
-pub fn encode<T, W>(mut value: T, out: &mut W)
-where
-    T: Primitive,
-    W: BufMut + ?Sized,
-{
+pub fn encode<T: Primitive>(mut value: T, out: &mut Writer<impl Output>) {
     while value.needs_more() {
         out.put_u8(value.low_7_bits() | 0x80);
         value = value.shr_7();
@@ -78,30 +79,31 @@ where
     out.put_u8(value.low_7_bits());
 }
 
+#[inline]
 pub fn decode<T, B>(reader: &mut Reader<B>) -> Result<T, Error>
 where
     T: Primitive,
     B: ByteSlice,
 {
-    let mut value = T::from_u8(0);
+    let first = reader.take_u8()?;
+    if first < 0x80 {
+        return Ok(T::from_u8(first));
+    }
 
-    for index in 0..T::MAX_ENCODED_LEN {
-        let byte = reader.decode::<u8>()?;
-        let payload = byte & 0x7f;
-
-        value = value
-            .checked_add_payload(payload, index * 7)
-            .ok_or(Error::InvalidVarint)?;
-
-        if byte & 0x80 == 0 {
-            if index > 0 && payload == 0 {
-                return Err(Error::InvalidVarint);
-            }
+    let mut value = T::from_u8(first & 0x7f);
+    for index in 1..T::MAX_ENCODED_LEN - 1 {
+        let byte = reader.take_u8()?;
+        value = value.add_payload(byte & 0x7f, index * 7);
+        if byte < 0x80 {
             return Ok(value);
         }
     }
 
-    Err(Error::InvalidVarint)
+    let last = reader.take_u8()?;
+    if last > T::LAST_PAYLOAD_MAX {
+        return Err(Error::InvalidVarint);
+    }
+    Ok(value.add_payload(last, (T::MAX_ENCODED_LEN - 1) * 7))
 }
 
 macro_rules! impl_varint {
@@ -109,6 +111,8 @@ macro_rules! impl_varint {
         $(
             impl Primitive for $ty {
                 const MAX_ENCODED_LEN: usize = (size_of::<Self>() * 8).div_ceil(7);
+                #[allow(clippy::cast_possible_truncation)]
+                const LAST_PAYLOAD_MAX: u8 = (Self::MAX >> ((Self::MAX_ENCODED_LEN - 1) * 7)) as u8;
 
                 #[inline]
                 fn from_u8(value: u8) -> Self {
@@ -128,17 +132,8 @@ macro_rules! impl_varint {
                     self >= 0x80
                 }
                 #[inline]
-                fn checked_add_payload(self, payload: u8, shift: usize) -> Option<Self> {
-                    let bit_width = size_of::<Self>() * 8;
-                    if shift >= bit_width {
-                        return (payload == 0).then_some(self);
-                    }
-                    let max_payload = Self::MAX >> shift;
-                    let payload = Self::from(payload);
-                    if payload > max_payload {
-                        return None;
-                    }
-                    Some(self | (payload << shift))
+                fn add_payload(self, payload: u8, shift: usize) -> Self {
+                    self | (Self::from(payload) << shift)
                 }
             }
         )*
@@ -157,8 +152,9 @@ mod tests {
     where
         T: Primitive + Debug + PartialEq,
     {
-        let mut out = Vec::new();
+        let mut out = Writer::new(Vec::new());
         encode(value, &mut out);
+        let out = out.into_inner();
         assert_eq!(out.len(), encoded_len(value));
         let mut reader = Reader::new(out.as_slice());
         assert_eq!(decode(&mut reader), Ok(value));
@@ -189,14 +185,14 @@ mod tests {
         }
         assert_decodes(max);
 
-        let mut encoded = Vec::new();
+        let mut encoded = Writer::new(Vec::new());
         encode(T::from_u8(127), &mut encoded);
-        encoded.push(0x55);
+        encoded.put_u8(0x55);
+        let encoded = encoded.into_inner();
         let mut reader = Reader::new(encoded.as_slice());
         assert_eq!(decode(&mut reader), Ok(T::from_u8(127)));
         assert_eq!(reader.take_all(), &[0x55]);
 
-        assert_error::<T>(&[0x80, 0x00], Error::InvalidVarint);
         assert_error::<T>(&[0x80], Error::UnexpectedEof);
         assert_error::<T>(&vec![0xff; T::MAX_ENCODED_LEN], Error::InvalidVarint);
 

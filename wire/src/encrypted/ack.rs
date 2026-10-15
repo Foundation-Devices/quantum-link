@@ -1,6 +1,6 @@
 use std::{fmt, ops::RangeInclusive};
 
-use ql_codec::{ByteSlice, Encode, Error, Varint};
+use ql_codec::{Encode, Error, Output, Varint, Writer};
 
 use crate::RecordSeq;
 
@@ -135,7 +135,7 @@ impl Encode for RecordAck {
                 .sum::<usize>()
     }
 
-    fn encode<W: ::bytes::BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         self.largest_acked.encode(out);
         Varint(Self::block_count(self.blocks.len())).encode(out);
         self.first_range_len.encode(out);
@@ -146,12 +146,17 @@ impl Encode for RecordAck {
     }
 }
 
-impl<B: ByteSlice> ql_codec::Decode<B> for RecordAck {
-    fn decode(reader: &mut ql_codec::Reader<B>) -> Result<Self, Error> {
+impl ql_codec::DecodeValue for RecordAck {
+    fn decode_value<B: ql_codec::ByteSlice>(
+        reader: &mut ql_codec::Reader<B>,
+    ) -> Result<Self, Error> {
         let largest_acked = reader.decode()?;
         let block_count = *reader.decode::<Varint<u32>>()? as usize;
         let first_range_len = reader.decode()?;
-        let mut blocks = Vec::with_capacity(block_count);
+        // At most as much memory as the input, or a corrupt count could reserve gigabytes.
+        let mut blocks = Vec::with_capacity(
+            block_count.min(reader.remaining_len() / size_of::<RecordAckBlock>()),
+        );
         for _ in 0..block_count {
             blocks.push(RecordAckBlock {
                 gap: reader.decode()?,

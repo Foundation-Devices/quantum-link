@@ -1,5 +1,6 @@
 use ql_codec::{
-    encode_bytes, encoded_len_bytes, BufView, ByteSlice, Decode, Encode, Error, Varint,
+    encode_bytes, encoded_len_bytes, BufView, ByteSlice, Decode, Encode, Error, Output, Reader,
+    Varint, Writer,
 };
 use ql_common::StreamId;
 
@@ -37,11 +38,13 @@ impl<B, H> StreamData<B, H> {
         + Varint::<u32>::MAX_ENCODED_LEN; // header length
 }
 
-impl<B: ByteSlice> Decode<B> for StreamData<B> {
-    fn decode(reader: &mut ql_codec::Reader<B>) -> Result<Self, Error> {
+impl<B: ByteSlice> Decode<B> for StreamData<Vec<u8>> {
+    type Ref = StreamData<B>;
+
+    fn decode_ref(reader: &mut Reader<B>) -> Result<Self::Ref, Error> {
         let stream_id = reader.decode()?;
         let offset = reader.decode()?;
-        let flags = reader.decode::<u8>()?;
+        let flags = reader.take_u8()?;
         let fin = (flags & flag::FIN) != 0;
         let has_open = (flags & flag::OPEN) != 0;
         let open = if has_open {
@@ -55,7 +58,7 @@ impl<B: ByteSlice> Decode<B> for StreamData<B> {
         };
         let bytes = reader.take_len_prefixed()?;
 
-        Ok(Self {
+        Ok(StreamData {
             stream_id,
             offset,
             open,
@@ -63,25 +66,33 @@ impl<B: ByteSlice> Decode<B> for StreamData<B> {
             bytes,
         })
     }
+
+    fn from_ref(value: Self::Ref) -> Self {
+        value.map_bytes(|bytes| bytes.to_vec())
+    }
 }
 
-impl<B, H> StreamData<B, H> {
-    pub fn into_owned(self) -> StreamData<Vec<u8>>
-    where
-        B: ByteSlice,
-        H: ByteSlice,
-    {
+impl<B> StreamData<B> {
+    /// Converts the payload and the header with `f`
+    pub fn map_bytes<C>(self, mut f: impl FnMut(B) -> C) -> StreamData<C> {
         StreamData {
             stream_id: self.stream_id,
             offset: self.offset,
             open: self.open.map(|open| StreamOpen {
-                header: open.header.to_vec(),
+                header: f(open.header),
                 receive_window: open.receive_window,
                 requested_peer_receive_window: open.requested_peer_receive_window,
             }),
             fin: self.fin,
-            bytes: self.bytes.to_vec(),
+            bytes: f(self.bytes),
         }
+    }
+
+    pub fn into_owned(self) -> StreamData<Vec<u8>>
+    where
+        B: AsRef<[u8]>,
+    {
+        self.map_bytes(|bytes| bytes.as_ref().to_vec())
     }
 }
 
@@ -98,7 +109,7 @@ impl<B: BufView, H: BufView> Encode for StreamData<B, H> {
             + encoded_len_bytes(&self.bytes)
     }
 
-    fn encode<W: ::bytes::BufMut + ?Sized>(&self, out: &mut W) {
+    fn encode(&self, out: &mut Writer<impl Output>) {
         debug_assert!(
             *self.offset == 0 || self.open.is_none(),
             "stream opening is only valid at offset 0"

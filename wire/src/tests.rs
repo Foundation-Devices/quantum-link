@@ -4,11 +4,14 @@ use ql_common::{ResetCode, StreamId, QID};
 use super::*;
 
 fn decode_handshake_record(bytes: &[u8]) -> QlHandshakeRecord {
-    decode_record(bytes).unwrap().1
+    decode_record::<QlHandshakeRecord>(bytes)
+        .unwrap()
+        .1
+        .into_owned()
 }
 
 fn decode_session_record(bytes: &[u8]) -> QlSessionRecord<Vec<u8>> {
-    let (_, record) = decode_record::<QlSessionRecord<_>, _>(bytes).unwrap();
+    let (_, record) = decode_record::<QlSessionRecord<Vec<u8>>>(bytes).unwrap();
     record.into_owned()
 }
 
@@ -677,7 +680,7 @@ fn encrypted_session_record_round_trip_authenticates_header() {
     let record = encrypt_record(&crypto, session_route, header, &session_key, &body);
 
     let record_header = RecordHeader::new(session_route, RecordType::Session);
-    let bytes = encode_record_vec(record_header, &record);
+    let mut bytes = encode_record_vec(record_header, &record);
     assert_eq!(
         RecordHeader::decode_bytes(bytes.as_slice()).unwrap(),
         RecordHeader {
@@ -724,6 +727,28 @@ fn encrypted_session_record_round_trip_authenticates_header() {
             &session_key,
         ),
         Err(Error::DecryptFailed)
+    );
+
+    let payload_start =
+        record_header.encoded_len() + header.encoded_len() + ENCRYPTED_MESSAGE_AUTH_SIZE;
+    let ciphertext_ptr = bytes[payload_start..].as_ptr();
+    let mut reader = ql_codec::Reader::new(bytes.as_mut_slice());
+    let decoded_header = reader.decode::<RecordHeader>().unwrap();
+    let decoded = reader.decode_ref::<QlSessionRecord<Vec<u8>>>().unwrap();
+    assert!(reader.is_empty());
+    assert_eq!(decoded.payload.ciphertext.as_ptr(), ciphertext_ptr);
+    let plaintext = encrypted::decrypt_record(
+        &crypto,
+        &decoded_header,
+        &decoded.header,
+        decoded.payload,
+        &session_key,
+    )
+    .unwrap();
+    assert_eq!(decode_session_frames(plaintext).unwrap(), body);
+    assert_eq!(
+        decode_session_frames(&bytes[payload_start..]).unwrap(),
+        body
     );
 }
 
@@ -951,7 +976,6 @@ fn encoded_len_matches_encoding() {
         &RecordHeader::new(route(1, 2), RecordType::Handshake),
     );
     assert_encoded_len("RecordType", &RecordType::Session);
-    assert_encoded_len("HandshakeKind", &HandshakeKind::Xx4);
     assert_encoded_len("SessionHeader", &SessionHeader { seq: RecordSeq(7) });
     assert_encoded_len("ResetTarget", &ResetTarget::Both);
     assert_encoded_len(

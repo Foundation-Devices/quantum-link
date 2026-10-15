@@ -1,4 +1,4 @@
-use ql_codec::{ByteSlice, Decode, Encode};
+use ql_codec::{BufView, ByteSlice, Decode, Encode, Output, Reader, Writer};
 use ql_common::QID;
 
 use crate::{
@@ -7,37 +7,36 @@ use crate::{
     Error, RouteHeader, SessionHeader, QL_WIRE_VERSION,
 };
 
-pub fn encode_record<W, T>(out: &mut W, header: RecordHeader, body: &T)
-where
-    W: bytes::BufMut + ?Sized,
-    T: Encode + ?Sized,
-{
+pub fn encode_record<T: Encode + ?Sized>(
+    out: &mut Writer<impl Output>,
+    header: RecordHeader,
+    body: &T,
+) {
     header.encode(out);
     body.encode(out);
 }
 
 pub fn encode_record_vec<T: Encode + ?Sized>(header: RecordHeader, body: &T) -> Vec<u8> {
-    let mut out = Vec::with_capacity(header.encoded_len() + body.encoded_len());
+    let mut out = Writer::new(Vec::with_capacity(
+        header.encoded_len() + body.encoded_len(),
+    ));
     encode_record(&mut out, header, body);
-    out
+    out.into_inner()
 }
 
-pub fn decode_record<T, B>(bytes: B) -> Result<(RecordHeader, T), Error>
-where
-    T: Decode<B>,
-    B: ByteSlice,
-{
-    let mut reader = ql_codec::Reader::new(bytes);
-    Ok((reader.decode()?, reader.decode()?))
+pub fn decode_record<'a, T: Decode<&'a [u8]>>(
+    bytes: &'a [u8],
+) -> Result<(RecordHeader, T::Ref), Error> {
+    let mut reader = Reader::new(bytes);
+    Ok((reader.decode()?, reader.decode_ref::<T>()?))
 }
 
-ql_codec::codec! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct RecordHeader {
-        pub version: u8,
-        pub route: RouteHeader,
-        pub record_type: RecordType,
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ql_codec::Codec)]
+#[codec(frozen)]
+pub struct RecordHeader {
+    pub version: u8,
+    pub route: RouteHeader,
+    pub record_type: RecordType,
 }
 
 impl RecordHeader {
@@ -52,41 +51,67 @@ impl RecordHeader {
     }
 }
 
-ql_codec::codec! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub enum RecordType {
-        Handshake = 1,
-        Session = 2,
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ql_codec::Codec)]
+#[codec(frozen)]
+pub enum RecordType {
+    Handshake = 1,
+    Session = 2,
 }
 
-ql_codec::codec! {
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub enum QlHandshakeRecord as HandshakeKind {
-        Ik1(Ik1) = 1,
-        Ik2(Ik2) = 2,
-        Kk1(Ik1) = 3,
-        Kk2(Ik2) = 4,
-        Xx1(Xx1) = 5,
-        Xx2(Xx2) = 6,
-        Xx3(Xx3) = 7,
-        Xx4(Xx4) = 8,
-    }
+#[derive(Debug, Clone, PartialEq, Eq, ql_codec::Codec)]
+#[codec(frozen, discriminants = HandshakeKind)]
+#[repr(u8)]
+pub enum QlHandshakeRecord {
+    Ik1(Ik1) = 1,
+    Ik2(Ik2) = 2,
+    Kk1(Ik1) = 3,
+    Kk2(Ik2) = 4,
+    Xx1(Xx1) = 5,
+    Xx2(Xx2) = 6,
+    Xx3(Xx3) = 7,
+    Xx4(Xx4) = 8,
 }
 
-ql_codec::codec! {
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    pub struct QlSessionRecord<B> {
-        pub header: SessionHeader,
-        pub payload: EncryptedMessage<B>,
-    }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QlSessionRecord<B> {
+    pub header: SessionHeader,
+    pub payload: EncryptedMessage<B>,
 }
 
-impl<B: ByteSlice> QlSessionRecord<B> {
+impl<B: AsRef<[u8]>> QlSessionRecord<B> {
     pub fn into_owned(self) -> QlSessionRecord<Vec<u8>> {
         QlSessionRecord {
             header: self.header,
             payload: self.payload.into_owned(),
+        }
+    }
+}
+
+impl<B: BufView> Encode for QlSessionRecord<B> {
+    fn encoded_len(&self) -> usize {
+        self.header.encoded_len() + self.payload.encoded_len()
+    }
+
+    fn encode(&self, out: &mut Writer<impl Output>) {
+        self.header.encode(out);
+        self.payload.encode(out);
+    }
+}
+
+impl<B: ByteSlice> Decode<B> for QlSessionRecord<Vec<u8>> {
+    type Ref = QlSessionRecord<B>;
+
+    fn decode_ref(reader: &mut Reader<B>) -> Result<Self::Ref, ql_codec::Error> {
+        Ok(QlSessionRecord {
+            header: reader.decode()?,
+            payload: reader.decode_ref::<EncryptedMessage<Vec<u8>>>()?,
+        })
+    }
+
+    fn from_ref(value: Self::Ref) -> Self {
+        Self {
+            header: value.header,
+            payload: <EncryptedMessage<Vec<u8>> as Decode<B>>::from_ref(value.payload),
         }
     }
 }

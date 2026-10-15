@@ -2,6 +2,7 @@ use core::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
+    InvalidAlignment,
     InvalidData,
     UnexpectedEof,
     InvalidDiscriminant,
@@ -14,6 +15,7 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self {
+            Self::InvalidAlignment => "invalid alignment",
             Self::InvalidData => "invalid data",
             Self::UnexpectedEof => "unexpected end of input",
             Self::InvalidDiscriminant => "invalid discriminant",
