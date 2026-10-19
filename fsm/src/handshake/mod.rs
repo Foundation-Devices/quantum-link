@@ -1,6 +1,8 @@
 mod ik;
 mod xx;
 
+use std::num::NonZeroU32;
+
 use ql_common::QID;
 use ql_wire::{
     self as wire, EphemeralPublicKey, HandshakeId, IkPattern, MlKemPublicKey, QlCrypto,
@@ -43,9 +45,17 @@ pub fn handle_connect_xx<M: StreamMeta>(
     xx::start_initiator(fsm, crypto, invite.token, invite.qid);
 }
 
-pub fn next_handshake_id<M: StreamMeta>(fsm: &mut QlFsm<M>) -> HandshakeId {
-    let handshake_id = wire::HandshakeId(fsm.state.next_control_id);
-    fsm.state.next_control_id = fsm.state.next_control_id.wrapping_add(1);
+pub fn next_handshake_id<M: StreamMeta>(
+    fsm: &mut QlFsm<M>,
+    crypto: &impl wire::QlRandom,
+) -> HandshakeId {
+    let next = fsm.state.next_control_id.get_or_insert_with(|| {
+        let mut bytes = [0; 4];
+        crypto.fill_random_bytes(&mut bytes);
+        NonZeroU32::new(u32::from_le_bytes(bytes)).unwrap_or(NonZeroU32::MIN)
+    });
+    let handshake_id = wire::HandshakeId(next.get());
+    *next = next.checked_add(1).unwrap_or(NonZeroU32::MIN);
     handshake_id
 }
 

@@ -198,7 +198,7 @@ impl<M: StreamMeta> QlFsm<M> {
             config,
             identity,
             state: QlFsmState {
-                next_control_id: 1,
+                next_control_id: None,
                 peer: None,
                 armed_pairing_token: None,
                 handshake: None,

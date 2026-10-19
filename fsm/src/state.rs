@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{num::NonZeroU32, time::Instant};
 
 use ql_common::QID;
 use ql_wire::{
@@ -9,7 +9,7 @@ use ql_wire::{
 use crate::{session::SessionFsm, NoSessionError, PeerStatus};
 
 pub struct QlFsmState<M> {
-    pub next_control_id: u32,
+    pub next_control_id: Option<NonZeroU32>,
     pub peer: Option<PeerBundle>,
     pub armed_pairing_token: Option<PairingToken>,
     pub handshake: Option<(RouteHeader, QlHandshakeRecord)>,

@@ -17,7 +17,7 @@ pub fn start_initiator<M: StreamMeta>(
     token: PairingToken,
     remote_qid: QID,
 ) {
-    let handshake_id = super::next_handshake_id(fsm);
+    let handshake_id = super::next_handshake_id(fsm, crypto);
     let route = RouteHeader {
         sender: fsm.identity.qid,
         recipient: remote_qid,

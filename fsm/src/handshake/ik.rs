@@ -16,7 +16,7 @@ pub fn start_initiator<M: StreamMeta>(
     peer: PeerBundle,
     pattern: IkPattern,
 ) {
-    let handshake_id = super::next_handshake_id(fsm);
+    let handshake_id = super::next_handshake_id(fsm, crypto);
     let route = RouteHeader {
         sender: fsm.identity.qid,
         recipient: peer.qid,

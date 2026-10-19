@@ -52,6 +52,23 @@ fn xx_connect_round_trip_establishes_transport_when_armed() {
 }
 
 #[test]
+fn restarted_peer_reconnects() {
+    let mut harness = Harness::paired_known(QlFsmConfig::default());
+    harness.connect_ik(Side::A).unwrap();
+    harness.pump();
+
+    let time = harness.time();
+    harness.a.fsm = QlFsm::new(harness.a.fsm.config, harness.a.fsm.identity.clone(), time);
+    harness.a.fsm.bind_peer(harness.b.fsm.identity.bundle());
+    harness.connect_ik(Side::A).unwrap();
+    harness.pump();
+
+    assert_eq!(harness.a.fsm.peer_status(), PeerStatus::Connected);
+    harness.a.fsm.queue_ping().unwrap();
+    harness.pump();
+}
+
+#[test]
 fn public_state_tracks_xx_pairing() {
     let mut harness = Harness::paired(QlFsmConfig::default(), false, false);
     let token = pairing_token(2);
