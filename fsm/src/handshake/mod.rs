@@ -43,10 +43,14 @@ pub fn handle_connect_xx<M: StreamMeta>(
     xx::start_initiator(fsm, crypto, invite.token, invite.qid);
 }
 
-pub fn next_handshake_id<M: StreamMeta>(fsm: &mut QlFsm<M>) -> HandshakeId {
-    let handshake_id = wire::HandshakeId(fsm.state.next_control_id);
-    fsm.state.next_control_id = fsm.state.next_control_id.wrapping_add(1);
-    handshake_id
+pub fn next_handshake_id<M: StreamMeta>(fsm: &mut QlFsm<M>, crypto: &impl QlCrypto) -> HandshakeId {
+    let id = *fsm.state.next_control_id.get_or_insert_with(|| {
+        let mut bytes = [0; 4];
+        crypto.fill_random_bytes(&mut bytes);
+        u32::from_le_bytes(bytes)
+    });
+    fsm.state.next_control_id = Some(id.wrapping_add(1));
+    wire::HandshakeId(id)
 }
 
 pub fn enqueue_handshake<M: StreamMeta>(

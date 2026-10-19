@@ -9,7 +9,9 @@ use ql_wire::{
 use crate::{session::SessionFsm, NoSessionError, PeerStatus};
 
 pub struct QlFsmState<M> {
-    pub next_control_id: u32,
+    /// drawn at random on the first handshake, so a restarted peer does not
+    /// reuse the id of the session its peer still holds
+    pub next_control_id: Option<u32>,
     pub peer: Option<PeerBundle>,
     pub armed_pairing_token: Option<PairingToken>,
     pub handshake: Option<(RouteHeader, QlHandshakeRecord)>,

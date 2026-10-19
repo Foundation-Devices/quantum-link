@@ -17,6 +17,30 @@ fn ik_connect_round_trip_establishes_transport() {
 }
 
 #[test]
+fn restarted_peer_reconnects_while_other_side_holds_old_session() {
+    let mut harness = Harness::paired_known(QlFsmConfig::default());
+    harness.connect_ik(Side::A).unwrap();
+    harness.pump();
+    assert!(matches!(harness.a.fsm.state.link, LinkState::Connected(_)));
+
+    // B restarts: same identity and peer, no session; A still holds the old one.
+    let identity_b = harness.b.fsm.identity.clone();
+    let bundle_a = harness.a.fsm.identity.bundle();
+    harness.b.fsm = QlFsm::new(QlFsmConfig::default(), identity_b, harness.now);
+    harness.b.fsm.bind_peer(bundle_a);
+
+    harness.connect_ik(Side::B).unwrap();
+    harness.pump();
+
+    let (LinkState::Connected(a), LinkState::Connected(b)) =
+        (&harness.a.fsm.state.link, &harness.b.fsm.state.link)
+    else {
+        panic!("the restarted peer did not reconnect");
+    };
+    assert_eq!(a.handshake_id, b.handshake_id);
+}
+
+#[test]
 fn kk_connect_round_trip_establishes_transport() {
     let mut harness = Harness::paired_known(QlFsmConfig::default());
 
