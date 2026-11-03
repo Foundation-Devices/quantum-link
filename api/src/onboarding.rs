@@ -11,20 +11,23 @@ app_routes! {
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum OnboardingState {
-        FirmwareUpdateScreen,
-        SecuringDevice,
-        DeviceSecured,
-        WalletCreationScreen,
-        CreatingWallet,
-        WalletCreated,
-        MagicBackupScreen,
-        CreatingMagicBackup,
-        MagicBackupCreated,
-        CreatingManualBackup,
-        CreatingKeycardBackup,
-        WritingDownSeedWords,
-        Completed,
+        FirmwareUpdateScreen = 1,
+        SecuringDevice = 2,
+        DeviceSecured = 3,
+        WalletCreationScreen = 4,
+        CreatingWallet = 5,
+        WalletCreated = 6,
+        MagicBackupScreen = 7,
+        CreatingMagicBackup = 8,
+        MagicBackupCreated = 9,
+        CreatingManualBackup = 10,
+        CreatingKeycardBackup = 11,
+        WritingDownSeedWords = 12,
+        Completed = 13,
+        #[codec(unknown)]
+        Unknown = 0,
     }
 }
 

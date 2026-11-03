@@ -19,31 +19,35 @@ rpc! {
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum ChallengeResponseResult {
-        Success { data: Vec<u8> },
-        Error { error: String },
+        Success { data: Vec<u8> } = 1,
+        Error { error: String } = 2,
     }
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum VerificationResult {
-        Success,
-        Error { error: String },
-        Failure,
+        Success = 1,
+        Error { error: String } = 2,
+        Failure = 3,
     }
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum RunSecurityCheckResponderEvent {
-        ChallengeRequest(ChallengeRequest),
-        VerificationResult(VerificationResult),
+        ChallengeRequest(ChallengeRequest) = 1,
+        VerificationResult(VerificationResult) = 2,
     }
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum RunSecurityCheckInitiatorEvent {
-        Start,
-        ChallengeResponse(ChallengeResponseResult),
+        Start = 1,
+        ChallengeResponse(ChallengeResponseResult) = 2,
     }
 }
 

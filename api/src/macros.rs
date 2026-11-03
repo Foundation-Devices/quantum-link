@@ -4,13 +4,13 @@ macro_rules! impl_codec {
             type Error = crate::Error;
 
             fn encode_value<B: bytes::BufMut + ?Sized>(&self, out: &mut B) {
-                $crate::codec::encode_cbor(self, out);
+                $crate::codec::encode(self, out);
             }
 
             fn decode_value<B: bytes::Buf>(
                 bytes: &mut B,
             ) -> Result<Self, <Self as ql_rpc::RpcCodec>::Error> {
-                $crate::codec::decode_cbor(bytes)
+                $crate::codec::decode(bytes)
             }
         }
     };
@@ -110,7 +110,7 @@ macro_rules! rpc {
 
 macro_rules! rpc_item {
     (PartialEq; $(#[$attr:meta])* $vis:vis $kind:ident $name:ident $($body:tt)+) => {
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[derive(Debug, Clone, PartialEq, ql_codec::Codec)]
         $(#[$attr])*
         #[cfg_attr(feature = "frb", flutter_rust_bridge::frb(non_opaque))]
         $vis $kind $name $($body)+
@@ -118,7 +118,7 @@ macro_rules! rpc_item {
         impl_codec!($name);
     };
     (Eq; $(#[$attr:meta])* $vis:vis $kind:ident $name:ident $($body:tt)+) => {
-        #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        #[derive(Debug, Clone, PartialEq, Eq, ql_codec::Codec)]
         $(#[$attr])*
         #[cfg_attr(feature = "frb", flutter_rust_bridge::frb(non_opaque))]
         $vis $kind $name $($body)+

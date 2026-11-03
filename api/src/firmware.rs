@@ -23,24 +23,30 @@ app_routes! {
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum InstallErrorStage {
-        Download,
-        Verify,
-        Install,
+        Download = 1,
+        Verify = 2,
+        Install = 3,
+        #[codec(unknown)]
+        Unknown = 0,
     }
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum FirmwareInstallEvent {
-        Installing,
-        Rebooting,
+        Installing = 1,
+        Rebooting = 2,
         Success {
             installed_version: String,
-        },
+        } = 3,
         Error {
             error: String,
             stage: InstallErrorStage,
-        },
+        } = 4,
+        #[codec(unknown)]
+        Unknown = 0,
     }
 }
 
@@ -66,9 +72,10 @@ rpc! {
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum FirmwareUpdateCheckResponse {
-        Available(FirmwareUpdateAvailable),
-        NotAvailable,
+        Available(FirmwareUpdateAvailable) = 1,
+        NotAvailable = 2,
     }
 }
 
@@ -85,10 +92,11 @@ rpc! {
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum DownloadFirmwareHeader {
-        Available(FirmwareUpdateAvailable),
-        NotAvailable,
-        Error { error: String },
+        Available(FirmwareUpdateAvailable) = 1,
+        NotAvailable = 2,
+        Error { error: String } = 3,
     }
 }
 

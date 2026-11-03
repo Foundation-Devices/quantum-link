@@ -35,9 +35,10 @@ impl Subscription for SubscribePassportMagicBackupEnabled {
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum MagicBackupRestoreResult {
-        Success,
-        Error { error: String },
+        Success = 1,
+        Error { error: String } = 2,
     }
 }
 
@@ -66,9 +67,10 @@ rpc! {
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum BackupShardResponse {
-        Success,
-        Error { error: String },
+        Success = 1,
+        Error { error: String } = 2,
     }
 }
 
@@ -86,10 +88,11 @@ rpc! {
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum RestoreShardResponse {
-        Success { shard: Shard },
-        Error { error: String },
-        NotFound,
+        Success { shard: Shard } = 1,
+        Error { error: String } = 2,
+        NotFound = 3,
     }
 }
 
@@ -127,9 +130,10 @@ rpc! {
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum UploadMagicBackupResponse {
-        Success,
-        Error { error: String },
+        Success = 1,
+        Error { error: String } = 2,
     }
 }
 
@@ -157,10 +161,11 @@ rpc! {
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum DownloadMagicBackupHeader {
-        Found(BackupMetadata),
-        NotFound,
-        Error { error: String },
+        Found(BackupMetadata) = 1,
+        NotFound = 2,
+        Error { error: String } = 3,
     }
 }
 

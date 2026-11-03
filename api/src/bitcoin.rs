@@ -30,10 +30,11 @@ rpc! {
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum SignPsbtResponse {
-        Signed { psbt: Vec<u8> },
-        Rejected,
-        Error { error: String },
+        Signed { psbt: Vec<u8> } = 1,
+        Rejected = 2,
+        Error { error: String } = 3,
     }
 }
 
@@ -84,9 +85,10 @@ rpc! {
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum BroadcastTransactionResponse {
-        Broadcast { txid: String },
-        Error { error: String },
+        Broadcast { txid: String } = 1,
+        Error { error: String } = 2,
     }
 }
 

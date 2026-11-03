@@ -40,8 +40,7 @@ impl AppId {
     }
 }
 
-// todo: version
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, ql_codec::Codec)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PeerPermissions {
     /// KeyOS app ids this peer is allowed to open streams toward

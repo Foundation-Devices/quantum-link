@@ -6,10 +6,13 @@ use crate::{Empty, Error};
 // COMMON TYPES
 
 rpc! {
+    #[repr(u32)]
     pub enum PassportModel {
-        Gen1,
-        Gen2,
-        Prime,
+        Gen1 = 1,
+        Gen2 = 2,
+        Prime = 3,
+        #[codec(unknown)]
+        Unknown = 0,
     }
 }
 
@@ -22,9 +25,12 @@ rpc! {
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum PassportColor {
-        Light,
-        Dark,
+        Light = 1,
+        Dark = 2,
+        #[codec(unknown)]
+        Unknown = 0,
     }
 }
 
@@ -91,9 +97,12 @@ impl Subscription for SubscribePassportFiatPreference {
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum AppActivityEvent {
-        Opened(AppId),
-        Closed(AppId),
+        Opened(AppId) = 1,
+        Closed(AppId) = 2,
+        #[codec(unknown)]
+        Unknown = 0,
     }
 }
 
@@ -108,9 +117,10 @@ rpc! {
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum PeerPermissionsResponse {
-        Updated,
-        Denied,
+        Updated = 1,
+        Denied = 2,
     }
 }
 
@@ -128,9 +138,10 @@ rpc! {
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum InstallPeerBundlesResponse {
-        Installed,
-        Rejected,
+        Installed = 1,
+        Rejected = 2,
     }
 }
 
@@ -141,9 +152,10 @@ impl Request for RequestInstallPeerBundles {
 }
 
 rpc! {
+    #[repr(u32)]
     pub enum AttachRouterResponse {
-        Started,
-        Rejected,
+        Started = 1,
+        Rejected = 2,
     }
 }
 

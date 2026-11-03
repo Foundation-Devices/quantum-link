@@ -3,6 +3,9 @@
 //! feature modules define requests, responses, events, and payloads for one area
 //! such as onboarding, keys, firmware, or system operations
 //! these types sit above the protocol streams and RPC machinery
+//!
+//! payloads use `ql-codec`. append fields with safe defaults and preserve wire and route ids.
+//! use `Unknown` only where callers can safely ignore unfamiliar variants.
 
 #[macro_use]
 mod macros;
@@ -20,12 +23,12 @@ pub mod scv;
 pub mod system;
 pub mod time;
 
+pub use ql_codec::Error;
+
 pub use self::{
     app_store::*, backup::*, bitcoin::*, codec::Empty, debug::*, firmware::*, fx::*, key::*,
     onboarding::*, scv::*, system::*, time::*,
 };
-
-pub type Error = ciborium::de::Error<std::io::Error>;
 
 // naming scheme
 // Request:
