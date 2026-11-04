@@ -2,7 +2,7 @@ use ql_rpc::{request::Request, Download};
 
 // APP ROUTES
 
-app_routes! {
+ql_keyos::app_routes! {
     crate::app_id::DEBUG => {
         RequestPassportEcho: Request = 1,
         DownloadPassportBenchmark: Download = 2,
@@ -50,7 +50,7 @@ impl Download for DownloadPassportBenchmark {
 
 // SERVICE ROUTES
 
-service_routes! {
+ql_keyos::service_routes! {
     crate::service_id::DEBUG => {
         RequestEcho: Request = 1,
         DownloadBenchmark: Download = 3,

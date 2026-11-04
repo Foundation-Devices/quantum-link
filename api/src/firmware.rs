@@ -16,7 +16,7 @@ rpc! {
 
 // APP ROUTES
 
-app_routes! {
+ql_keyos::app_routes! {
     crate::app_id::UPDATE => {
         SubscribeFirmwareInstallStatus: Subscription = 1,
     }
@@ -57,7 +57,7 @@ impl Subscription for SubscribeFirmwareInstallStatus {
 
 // SERVICE ROUTES
 
-service_routes! {
+ql_keyos::service_routes! {
     crate::service_id::FIRMWARE => {
         RequestCheckFirmwareUpdate: Request = 1,
         DownloadFirmware: Download = 2,

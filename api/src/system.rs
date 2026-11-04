@@ -36,7 +36,7 @@ rpc! {
 
 // APP ROUTES
 
-app_routes! {
+ql_keyos::app_routes! {
     crate::app_id::SYSTEM => {
         RequestPassportDetails: Request = 1,
         SubscribePassportDetails: Subscription = 2,

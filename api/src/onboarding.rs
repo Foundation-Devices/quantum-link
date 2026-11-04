@@ -4,7 +4,7 @@ use crate::Empty;
 
 // APP ROUTES
 
-app_routes! {
+ql_keyos::app_routes! {
     crate::app_id::ONBOARDING => {
         SubscribeOnboardingStatus: Subscription = 1,
     }

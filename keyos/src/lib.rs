@@ -6,6 +6,11 @@
 
 use ql_codec::{Encode, Reader, Writer};
 
+mod macros;
+
+#[doc(hidden)]
+pub use ql_rpc as __rpc;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, ql_codec::Codec)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[codec(frozen)]

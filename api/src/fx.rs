@@ -23,7 +23,7 @@ rpc! {
 
 // SERVICE ROUTES
 
-service_routes! {
+ql_keyos::service_routes! {
     crate::service_id::FX => {
         SubscribeExchangeRate: Subscription = 1,
         RequestExchangeRateHistory: Request = 2,

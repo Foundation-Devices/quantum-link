@@ -4,7 +4,7 @@ use ql_rpc::Duplex;
 
 // SERVICE ROUTES
 
-service_routes! {
+ql_keyos::service_routes! {
     crate::service_id::SCV => {
         RunSecurityCheck: Duplex = 1,
     }

@@ -14,7 +14,7 @@ rpc! {
 
 // APP ROUTES
 
-app_routes! {
+ql_keyos::app_routes! {
     crate::app_id::BACKUP => {
         SubscribePassportMagicBackupEnabled: Subscription = 1,
         SubscribeMagicBackupRestoreCompleted: Subscription = 2,
@@ -48,7 +48,7 @@ impl Subscription for SubscribeMagicBackupRestoreCompleted {
 
 // SERVICE ROUTES
 
-service_routes! {
+ql_keyos::service_routes! {
     crate::service_id::BACKUP => {
         RequestBackupShard: Request = 1,
         RequestRestoreShard: Request = 2,

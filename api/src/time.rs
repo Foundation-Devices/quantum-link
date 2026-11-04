@@ -6,7 +6,7 @@ use crate::Empty;
 
 // SERVICE ROUTES
 
-service_routes! {
+ql_keyos::service_routes! {
     crate::service_id::TIME => {
         RequestTimezone: Request = 1,
         RequestCurrentTime: Request = 2,

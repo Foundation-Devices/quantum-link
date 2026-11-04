@@ -22,7 +22,7 @@ rpc! {
 
 // SERVICE ROUTES
 
-service_routes! {
+ql_keyos::service_routes! {
     crate::service_id::APP_STORE => {
         RequestListApps: Request = 1,
         DownloadApp: Download = 2,

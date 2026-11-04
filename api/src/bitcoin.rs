@@ -13,7 +13,7 @@ rpc! {
 
 // APP ROUTES
 
-app_routes! {
+ql_keyos::app_routes! {
     crate::app_id::BITCOIN => {
         RequestSignPsbt: Request = 1,
         SubscribeAccountUpdated: Subscription = 2,
@@ -67,7 +67,7 @@ impl Request for RequestPassportActiveSeedFingerprint {
 
 // SERVICE ROUTES
 
-service_routes! {
+ql_keyos::service_routes! {
     crate::service_id::BITCOIN => {
         RequestBroadcastTransaction: Request = 1,
     }
