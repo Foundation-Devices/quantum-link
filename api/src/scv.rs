@@ -1,7 +1,5 @@
 use ql_rpc::Duplex;
 
-use crate::Error;
-
 // APP ROUTES
 
 // SERVICE ROUTES
@@ -52,7 +50,6 @@ rpc! {
 }
 
 impl Duplex for RunSecurityCheck {
-    type Error = Error;
     type InitiatorEvent = RunSecurityCheckInitiatorEvent;
     type ResponderEvent = RunSecurityCheckResponderEvent;
 }

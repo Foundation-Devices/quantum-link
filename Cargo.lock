@@ -1256,7 +1256,6 @@ dependencies = [
 name = "ql-api"
 version = "0.1.0"
 dependencies = [
- "bytes",
  "flutter_rust_bridge",
  "ql-codec",
  "ql-keyos",
@@ -1333,6 +1332,7 @@ name = "ql-rpc"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "ql-codec",
  "ql-common",
  "trait-variant",
 ]

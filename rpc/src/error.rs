@@ -33,13 +33,13 @@ impl Error {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RpcError<C, T> {
+pub enum RpcError<T> {
     Protocol(Error),
-    Codec(C),
+    Codec(ql_codec::Error),
     Transport(T),
 }
 
-impl<C, T> RpcError<C, T> {
+impl<T> RpcError<T> {
     pub const fn reset_code(&self) -> Option<ResetCode> {
         match self {
             Self::Protocol(error) => Some(error.reset_code()),
@@ -49,9 +49,8 @@ impl<C, T> RpcError<C, T> {
     }
 }
 
-impl<C, T> std::fmt::Display for RpcError<C, T>
+impl<T> std::fmt::Display for RpcError<T>
 where
-    C: std::fmt::Display,
     T: std::fmt::Display,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -63,9 +62,8 @@ where
     }
 }
 
-impl<C, T> std::error::Error for RpcError<C, T>
+impl<T> std::error::Error for RpcError<T>
 where
-    C: std::error::Error + 'static,
     T: std::error::Error + 'static,
 {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
@@ -77,7 +75,7 @@ where
     }
 }
 
-impl<C, T> From<Error> for RpcError<C, T> {
+impl<T> From<Error> for RpcError<T> {
     fn from(error: Error) -> Self {
         Self::Protocol(error)
     }

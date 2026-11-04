@@ -29,7 +29,7 @@ impl<M: Progress> ResponseReader<M> {
         self.bytes.push(chunk);
     }
 
-    pub fn advance<E>(&mut self) -> Result<ReadStep<M>, RpcError<M::Error, E>> {
+    pub fn advance<E>(&mut self) -> Result<ReadStep<M>, RpcError<E>> {
         let Some((kind, mut body)) = self
             .bytes
             .try_take_tagged_part()

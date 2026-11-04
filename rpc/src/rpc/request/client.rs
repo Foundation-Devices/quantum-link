@@ -7,7 +7,7 @@ use crate::{
 pub async fn call<M, St>(
     stream: St,
     request: &M::Request,
-) -> Result<M::Response, RpcError<M::Error, St::Error>>
+) -> Result<M::Response, RpcError<St::Error>>
 where
     M: Request,
     St: RpcStream,

@@ -1,7 +1,7 @@
 use ql_keyos::{AppId, PeerPermissions};
 use ql_rpc::{Request, Subscription};
 
-use crate::{Empty, Error};
+use crate::Empty;
 
 // COMMON TYPES
 
@@ -61,13 +61,11 @@ rpc! {
 }
 
 impl Request for RequestPassportDetails {
-    type Error = Error;
     type Request = Empty;
     type Response = PassportDetailsResponse;
 }
 
 impl Subscription for SubscribePassportDetails {
-    type Error = Error;
     type Request = Empty;
     type Event = PassportDetailsResponse;
 }
@@ -79,7 +77,6 @@ rpc! {
 }
 
 impl Request for RequestPassportFiatPreference {
-    type Error = Error;
     type Request = Empty;
     type Response = PassportFiatPreferenceResponse;
 }
@@ -91,7 +88,6 @@ rpc! {
 }
 
 impl Subscription for SubscribePassportFiatPreference {
-    type Error = Error;
     type Request = Empty;
     type Event = PassportFiatPreferenceEvent;
 }
@@ -107,7 +103,6 @@ rpc! {
 }
 
 impl Subscription for SubscribeAppActivity {
-    type Error = Error;
     type Request = Empty;
     type Event = AppActivityEvent;
 }
@@ -125,7 +120,6 @@ rpc! {
 }
 
 impl Request for RequestPeerPermissions {
-    type Error = Error;
     type Request = PeerPermissionsParams;
     type Response = PeerPermissionsResponse;
 }
@@ -146,7 +140,6 @@ rpc! {
 }
 
 impl Request for RequestInstallPeerBundles {
-    type Error = Error;
     type Request = InstallPeerBundlesParams;
     type Response = InstallPeerBundlesResponse;
 }
@@ -160,7 +153,6 @@ rpc! {
 }
 
 impl Request for RequestAttachRouter {
-    type Error = Error;
     type Request = Empty;
     type Response = AttachRouterResponse;
 }

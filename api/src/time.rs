@@ -1,6 +1,6 @@
 use ql_rpc::Request;
 
-use crate::{Empty, Error};
+use crate::Empty;
 
 // APP ROUTES
 
@@ -21,7 +21,6 @@ rpc! {
 }
 
 impl Request for RequestTimezone {
-    type Error = Error;
     type Request = Empty;
     type Response = TimezoneResponse;
 }
@@ -33,7 +32,6 @@ rpc! {
 }
 
 impl Request for RequestCurrentTime {
-    type Error = Error;
     type Request = Empty;
     type Response = CurrentTimeResponse;
 }

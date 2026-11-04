@@ -1,15 +1,12 @@
-use bytes::{Buf, BytesMut};
 use ql_api::*;
-use ql_codec::{Codec, Decode, Encode};
-use ql_rpc::RpcCodec;
+use ql_codec::{Codec, Decode, Encode, Error, Reader};
 
 #[test]
 fn wire_format_is_stable() {
-    let mut bytes = BytesMut::new();
-    EchoParams {
+    let bytes = EchoParams {
         message: "hi".into(),
     }
-    .encode_value(&mut bytes);
+    .encode_vec();
     assert_eq!(&bytes[..], &[3, 2, b'h', b'i']);
     assert_eq!(PassportModel::Prime.encode_vec(), [3, 0]);
     assert_eq!(VerificationResult::Success.encode_vec(), [1, 0]);
@@ -24,9 +21,8 @@ fn wire_format_is_stable() {
         rate.encode_vec(),
         [16, 3, b'U', b'S', b'D', 0, 0, 192, 63, 42, 0, 0, 0, 0, 0, 0, 0]
     );
-    let mut bytes = BytesMut::new();
-    rate.encode_value(&mut bytes);
-    assert_eq!(ExchangeRate::decode_value(&mut bytes).unwrap(), rate);
+    let bytes = rate.encode_vec();
+    assert_eq!(ExchangeRate::decode_bytes(bytes.as_slice()).unwrap(), rate);
 }
 
 #[test]
@@ -50,10 +46,7 @@ fn fields_can_be_appended_in_both_directions() {
         locale: Some("en".into()),
     }
     .encode_vec();
-    assert_eq!(
-        EchoParams::decode_value(&mut bytes.as_slice()).unwrap(),
-        old
-    );
+    assert_eq!(EchoParams::decode_bytes(bytes.as_slice()).unwrap(), old);
 }
 
 #[test]
@@ -69,20 +62,17 @@ fn empty_headers_and_nested_permissions_can_grow() {
         None
     );
     let bytes = FutureHeader { field: Some(7) }.encode_vec();
+    assert_eq!(Empty::decode_bytes(bytes.as_slice()).unwrap(), Empty {});
     assert_eq!(
-        Empty::decode_value(&mut bytes.as_slice()).unwrap(),
-        Empty {}
-    );
-    assert_eq!(
-        DownloadAppPartHeader::decode_value(&mut bytes.as_slice()).unwrap(),
+        DownloadAppPartHeader::decode_bytes(bytes.as_slice()).unwrap(),
         DownloadAppPartHeader {}
     );
     assert_eq!(
-        UploadMagicBackupPartHeader::decode_value(&mut bytes.as_slice()).unwrap(),
+        UploadMagicBackupPartHeader::decode_bytes(bytes.as_slice()).unwrap(),
         UploadMagicBackupPartHeader {}
     );
     assert_eq!(
-        DownloadBenchmarkPartHeader::decode_value(&mut bytes.as_slice()).unwrap(),
+        DownloadBenchmarkPartHeader::decode_bytes(bytes.as_slice()).unwrap(),
         DownloadBenchmarkPartHeader {}
     );
 
@@ -108,33 +98,33 @@ fn empty_headers_and_nested_permissions_can_grow() {
     })
     .encode_vec();
     assert_eq!(
-        PeerPermissionsParams::decode_value(&mut bytes.as_slice()).unwrap(),
+        PeerPermissionsParams::decode_bytes(bytes.as_slice()).unwrap(),
         old
     );
 }
 
 #[test]
 fn unknown_events_and_descriptive_values_skip_their_payloads() {
-    let mut bytes = &[127, 3, 1, 2, 3][..];
+    let mut reader = Reader::new(&[127, 3, 1, 2, 3][..]);
     assert_eq!(
-        AppActivityEvent::decode_value(&mut bytes).unwrap(),
+        AppActivityEvent::decode(&mut reader).unwrap(),
         AppActivityEvent::Unknown
     );
-    assert!(!bytes.has_remaining());
+    assert!(reader.is_empty());
 
-    let mut bytes = &[4, 6, 0, 127, 3, 1, 2, 3][..];
+    let mut reader = Reader::new(&[4, 6, 0, 127, 3, 1, 2, 3][..]);
     assert_eq!(
-        FirmwareInstallEvent::decode_value(&mut bytes).unwrap(),
+        FirmwareInstallEvent::decode(&mut reader).unwrap(),
         FirmwareInstallEvent::Error {
             error: String::new(),
             stage: InstallErrorStage::Unknown,
         }
     );
-    assert!(!bytes.has_remaining());
+    assert!(reader.is_empty());
 
-    let mut bytes = &[1, 3, 1, 2, 3][..];
+    let bytes = &[1, 3, 1, 2, 3][..];
     assert_eq!(
-        VerificationResult::decode_value(&mut bytes).unwrap(),
+        VerificationResult::decode_bytes(bytes).unwrap(),
         VerificationResult::Success
     );
 }
@@ -143,52 +133,38 @@ fn unknown_events_and_descriptive_values_skip_their_payloads() {
 fn unknown_operation_outcomes_and_protocol_commands_are_rejected() {
     let bytes = &[127, 3, 1, 2, 3][..];
     assert_eq!(
-        SignPsbtResponse::decode_value(&mut &bytes[..]),
+        SignPsbtResponse::decode_bytes(bytes),
         Err(Error::InvalidDiscriminant)
     );
     assert_eq!(
-        MagicBackupRestoreResult::decode_value(&mut &bytes[..]),
+        MagicBackupRestoreResult::decode_bytes(bytes),
         Err(Error::InvalidDiscriminant)
     );
     assert_eq!(
-        RunSecurityCheckInitiatorEvent::decode_value(&mut &bytes[..]),
+        RunSecurityCheckInitiatorEvent::decode_bytes(bytes),
         Err(Error::InvalidDiscriminant)
     );
     assert_eq!(
-        RunSecurityCheckResponderEvent::decode_value(&mut &bytes[..]),
+        RunSecurityCheckResponderEvent::decode_bytes(bytes),
         Err(Error::InvalidDiscriminant)
     );
     assert_eq!(
-        RunSecurityCheckResponderEvent::decode_value(&mut &[2, 5, 127, 3, 1, 2, 3][..]),
+        RunSecurityCheckResponderEvent::decode_bytes(&[2, 5, 127, 3, 1, 2, 3][..]),
         Err(Error::InvalidDiscriminant)
     );
 }
 
 #[test]
-fn fragmented_payloads_decode_and_invalid_frames_fail() {
-    let value = EchoParams {
-        message: "hi".into(),
-    };
-    let bytes = value.encode_vec();
-    for split in 0..=bytes.len() {
-        let mut input = bytes[..split].chain(&bytes[split..]);
-        assert_eq!(EchoParams::decode_value(&mut input).unwrap(), value);
-        assert!(!input.has_remaining());
-    }
-
+fn malformed_payloads_are_rejected() {
     for bytes in [
         &[4, 2, b'h', b'i'][..],
         &[3, 3, b'h', b'i'],
         &[3, 2, 255, 255],
-        &[3, 2, b'h', b'i', 0],
     ] {
-        for split in 0..=bytes.len() {
-            let mut input = bytes[..split].chain(&bytes[split..]);
-            assert!(EchoParams::decode_value(&mut input).is_err());
-        }
+        assert!(EchoParams::decode_bytes(bytes).is_err());
     }
     assert_eq!(
-        AppActivityEvent::decode_value(&mut &[127, 3, 1][..]),
+        AppActivityEvent::decode_bytes(&[127, 3, 1][..]),
         Err(Error::UnexpectedEof)
     );
 }

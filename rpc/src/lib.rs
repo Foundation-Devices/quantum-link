@@ -3,6 +3,7 @@
 //! each call uses one stream with a route key and typed payloads
 //! the crate provides request, notification, subscription, upload, download,
 //! progress, and duplex flows with client and server helpers
+//! typed payloads use `ql-codec`
 
 #![allow(clippy::type_complexity)]
 
@@ -14,7 +15,7 @@ mod rpc;
 mod stream;
 
 pub use chunk_queue::ChunkQueue;
-pub use codec::RpcCodec;
+pub use codec::{Codec, DecodeOwned};
 pub use error::*;
 pub use router::*;
 pub use rpc::*;

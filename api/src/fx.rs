@@ -1,7 +1,5 @@
 use ql_rpc::{Request, Subscription};
 
-use crate::Error;
-
 // COMMON TYPES
 
 rpc! {
@@ -39,7 +37,6 @@ rpc! {
 }
 
 impl Subscription for SubscribeExchangeRate {
-    type Error = Error;
     type Request = ExchangeRateParams;
     type Event = ExchangeRate;
 }
@@ -59,7 +56,6 @@ rpc! {
 }
 
 impl Request for RequestExchangeRateHistory {
-    type Error = Error;
     type Request = ExchangeRateHistoryParams;
     type Response = ExchangeRateHistory;
 }

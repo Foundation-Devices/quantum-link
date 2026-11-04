@@ -11,7 +11,7 @@ use crate::{
 pub async fn start<M, St>(
     stream: St,
     request: &M::Request,
-) -> Result<DownloadCall<M, St::Reader>, RpcError<M::Error, St::Error>>
+) -> Result<DownloadCall<M, St::Reader>, RpcError<St::Error>>
 where
     M: Download,
     St: RpcStream,
@@ -46,8 +46,7 @@ where
 
     pub async fn start(
         mut self,
-    ) -> Result<(M::ResponseHeader, MultipartReader<M::PartHeader, R>), RpcError<M::Error, R::Error>>
-    {
+    ) -> Result<(M::ResponseHeader, MultipartReader<M::PartHeader, R>), RpcError<R::Error>> {
         let (value, bytes) = read_framed_prefix::<M::ResponseHeader, _>(&mut self.stream, None)
             .await
             .inspect_err(|error| {

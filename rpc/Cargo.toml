@@ -7,5 +7,6 @@ license.workspace = true
 
 [dependencies]
 bytes = { workspace = true }
+ql-codec = { workspace = true }
 ql-common = { workspace = true }
 trait-variant = { version = "0.1" }

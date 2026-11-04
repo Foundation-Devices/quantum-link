@@ -1,7 +1,5 @@
 use ql_rpc::{request::Request, Download};
 
-use crate::Error;
-
 // APP ROUTES
 
 app_routes! {
@@ -40,13 +38,11 @@ rpc! {
 }
 
 impl Request for RequestPassportEcho {
-    type Error = Error;
     type Request = EchoParams;
     type Response = EchoResponse;
 }
 
 impl Download for DownloadPassportBenchmark {
-    type Error = Error;
     type Request = DownloadBenchmarkParams;
     type ResponseHeader = DownloadBenchmarkHeader;
     type PartHeader = DownloadBenchmarkPartHeader;
@@ -62,13 +58,11 @@ service_routes! {
 }
 
 impl Request for RequestEcho {
-    type Error = Error;
     type Request = EchoParams;
     type Response = EchoResponse;
 }
 
 impl Download for DownloadBenchmark {
-    type Error = Error;
     type Request = DownloadBenchmarkParams;
     type ResponseHeader = DownloadBenchmarkHeader;
     type PartHeader = DownloadBenchmarkPartHeader;

@@ -1,24 +1,23 @@
 use bytes::Bytes;
+use ql_codec::Encode;
 
 use crate::{
-    codec, read_bytes, write_bytes, ChunkQueue, Error, RouterConfig, RpcCodec, RpcError, RpcRead,
-    RpcWrite,
+    codec, read_bytes, write_bytes, ChunkQueue, DecodeOwned, Error, RouterConfig, RpcError,
+    RpcRead, RpcWrite,
 };
 
 pub async fn write_eof_value<T, W>(mut writer: W, value: &T) -> Result<(), W::Error>
 where
-    T: RpcCodec,
+    T: Encode,
     W: RpcWrite,
 {
-    let mut encoded = Vec::new();
-    value.encode_value(&mut encoded);
-    write_bytes(&mut writer, Bytes::from(encoded)).await?;
+    write_bytes(&mut writer, Bytes::from(value.encode_vec())).await?;
     writer.finish().await
 }
 
-pub async fn read_eof_value<T, R>(reader: &mut R) -> Result<T, RpcError<T::Error, R::Error>>
+pub async fn read_eof_value<T, R>(reader: &mut R) -> Result<T, RpcError<R::Error>>
 where
-    T: RpcCodec,
+    T: DecodeOwned,
     R: RpcRead,
 {
     let mut bytes = ChunkQueue::default();
@@ -37,9 +36,9 @@ where
 pub async fn read_framed_prefix<T, R>(
     reader: &mut R,
     max_len: Option<usize>,
-) -> Result<(T, ChunkQueue), RpcError<T::Error, R::Error>>
+) -> Result<(T, ChunkQueue), RpcError<R::Error>>
 where
-    T: RpcCodec,
+    T: DecodeOwned,
     R: RpcRead,
 {
     let mut bytes = ChunkQueue::default();
@@ -70,9 +69,9 @@ where
 pub async fn read_eof_request<T, R>(
     reader: &mut R,
     config: RouterConfig,
-) -> Result<T, RpcError<T::Error, R::Error>>
+) -> Result<T, RpcError<R::Error>>
 where
-    T: RpcCodec,
+    T: DecodeOwned,
     R: RpcRead,
 {
     let mut bytes = ChunkQueue::default();

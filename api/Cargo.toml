@@ -10,7 +10,6 @@ license.workspace = true
 ql-codec = { workspace = true }
 ql-keyos = { workspace = true }
 ql-rpc = { workspace = true }
-bytes = { workspace = true }
 flutter_rust_bridge = { version = "=2.11.1", optional = true }
 
 [features]

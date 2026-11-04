@@ -1,6 +1,6 @@
 use ql_rpc::{Download, Request};
 
-use crate::{Empty, Error};
+use crate::Empty;
 
 // COMMON TYPES
 
@@ -36,7 +36,6 @@ rpc! {
 }
 
 impl Request for RequestListApps {
-    type Error = Error;
     type Request = Empty;
     type Response = ListAppsResponse;
 }
@@ -58,7 +57,6 @@ rpc! {
 }
 
 impl Download for DownloadApp {
-    type Error = Error;
     type Request = DownloadAppParams;
     type ResponseHeader = DownloadAppHeader;
     type PartHeader = DownloadAppPartHeader;

@@ -7,7 +7,7 @@ pub type SubscriptionCall<M, R> = DuplexReceiver<<M as Subscription>::Event, R>;
 pub async fn start<M, St>(
     stream: St,
     request: &M::Request,
-) -> Result<SubscriptionCall<M, St::Reader>, RpcError<M::Error, St::Error>>
+) -> Result<SubscriptionCall<M, St::Reader>, RpcError<St::Error>>
 where
     M: Subscription,
     St: RpcStream,

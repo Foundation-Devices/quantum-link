@@ -5,11 +5,12 @@ use std::{
 };
 
 use bytes::Bytes;
+use ql_codec::Encode;
 use ql_common::ResetCode;
 
 use crate::{
-    codec, duplex::Duplex, write_bytes, ChunkQueue, Error, RpcCodec, RpcError, RpcRead, RpcStream,
-    RpcWrite,
+    codec, duplex::Duplex, write_bytes, ChunkQueue, DecodeOwned, Error, RpcError, RpcRead,
+    RpcStream, RpcWrite,
 };
 
 pub fn start<M, St>(stream: St) -> DuplexCall<M, St::Writer, St::Reader>
@@ -36,7 +37,6 @@ where
 
 pub struct DuplexSender<T, W>
 where
-    T: RpcCodec,
     W: RpcWrite,
 {
     writer: W,
@@ -45,7 +45,6 @@ where
 
 pub struct DuplexReceiver<T, R>
 where
-    T: RpcCodec,
     R: RpcRead,
 {
     stream: R,
@@ -56,7 +55,7 @@ where
 
 impl<T, W> DuplexSender<T, W>
 where
-    T: RpcCodec,
+    T: Encode,
     W: RpcWrite,
 {
     pub fn new(writer: W) -> Self {
@@ -85,7 +84,7 @@ where
 
 impl<T, R> DuplexReceiver<T, R>
 where
-    T: RpcCodec,
+    T: DecodeOwned,
     R: RpcRead,
 {
     pub fn new(stream: R) -> Self {
@@ -96,14 +95,14 @@ where
         }
     }
 
-    pub async fn next_event(&mut self) -> Option<Result<T, RpcError<T::Error, R::Error>>> {
+    pub async fn next_event(&mut self) -> Option<Result<T, RpcError<R::Error>>> {
         poll_fn(|cx| self.poll_next_event(cx)).await
     }
 
     pub fn poll_next_event(
         &mut self,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<T, RpcError<T::Error, R::Error>>>> {
+    ) -> Poll<Option<Result<T, RpcError<R::Error>>>> {
         if self.finished {
             return Poll::Ready(None);
         }
@@ -151,17 +150,17 @@ where
     }
 }
 
-enum ReadStep<T: RpcCodec> {
+enum ReadStep<T> {
     NeedMore,
     Event(T),
 }
 
-struct EventReader<T: RpcCodec> {
+struct EventReader<T> {
     bytes: ChunkQueue,
     marker: PhantomData<fn() -> T>,
 }
 
-impl<T: RpcCodec> Default for EventReader<T> {
+impl<T> Default for EventReader<T> {
     fn default() -> Self {
         Self {
             bytes: ChunkQueue::default(),
@@ -170,12 +169,12 @@ impl<T: RpcCodec> Default for EventReader<T> {
     }
 }
 
-impl<T: RpcCodec> EventReader<T> {
+impl<T: DecodeOwned> EventReader<T> {
     fn push(&mut self, chunk: Bytes) {
         self.bytes.push(chunk);
     }
 
-    fn advance<E>(&mut self) -> Result<ReadStep<T>, RpcError<T::Error, E>> {
+    fn advance<E>(&mut self) -> Result<ReadStep<T>, RpcError<E>> {
         let Some(mut body) = self.bytes.try_take_part().map_err(RpcError::Protocol)? else {
             return Ok(ReadStep::NeedMore);
         };

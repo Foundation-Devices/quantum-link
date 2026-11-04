@@ -1,5 +1,5 @@
 use super::Route;
-use crate::RpcCodec;
+use crate::Codec;
 
 mod client;
 mod server;
@@ -13,10 +13,8 @@ pub use self::{client::*, server::*};
 /// the response is also read to eof and rejects trailing bytes after
 /// [`Self::Response`]
 pub trait Request: Route {
-    /// codec error shared by request and response values
-    type Error;
     /// typed input sent by the caller
-    type Request: RpcCodec<Error = Self::Error>;
+    type Request: Codec;
     /// typed output returned by the responder
-    type Response: RpcCodec<Error = Self::Error>;
+    type Response: Codec;
 }

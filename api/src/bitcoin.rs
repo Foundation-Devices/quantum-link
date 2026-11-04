@@ -1,6 +1,6 @@
 use ql_rpc::{Request, Subscription};
 
-use crate::{Empty, Error};
+use crate::Empty;
 
 // COMMON TYPES
 
@@ -39,7 +39,6 @@ rpc! {
 }
 
 impl Request for RequestSignPsbt {
-    type Error = Error;
     type Request = SignPsbtParams;
     type Response = SignPsbtResponse;
 }
@@ -52,19 +51,16 @@ rpc! {
 }
 
 impl Subscription for SubscribeAccountUpdated {
-    type Error = Error;
     type Request = Empty;
     type Event = AccountUpdatedEvent;
 }
 
 impl Subscription for SubscribePassportActiveSeedFingerprint {
-    type Error = Error;
     type Request = Empty;
     type Event = ActiveSeedFingerprint;
 }
 
 impl Request for RequestPassportActiveSeedFingerprint {
-    type Error = Error;
     type Request = Empty;
     type Response = ActiveSeedFingerprint;
 }
@@ -93,7 +89,6 @@ rpc! {
 }
 
 impl Request for RequestBroadcastTransaction {
-    type Error = Error;
     type Request = BroadcastTransactionParams;
     type Response = BroadcastTransactionResponse;
 }

@@ -26,7 +26,7 @@ where
         download: DownloadStart<M, St::Writer>,
     );
 
-    fn handle_error(&self, error: &RpcError<M::Error, St::Error>) {
+    fn handle_error(&self, error: &RpcError<St::Error>) {
         let _ = error;
     }
 }
@@ -172,7 +172,7 @@ where
     St: RpcStream + 'static,
     H: FnOnce(S, Context, M::Request, DownloadStart<M, St::Writer>) -> HF,
     HF: Future<Output = ()>,
-    E: FnOnce(&S, &RpcError<M::Error, St::Error>),
+    E: FnOnce(&S, &RpcError<St::Error>),
 {
     let (mut reader, mut writer) = stream.split();
 

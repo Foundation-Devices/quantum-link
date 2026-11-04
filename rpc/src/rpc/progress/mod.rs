@@ -1,5 +1,5 @@
 use super::Route;
-use crate::RpcCodec;
+use crate::Codec;
 
 mod client;
 pub(crate) mod codec;
@@ -14,12 +14,10 @@ pub use self::{client::*, server::*};
 /// [`Self::Progress`] items from the final [`Self::Response`]
 /// reaching eof before the final response is an error
 pub trait Progress: Route {
-    /// codec error shared by request, progress, and response values
-    type Error;
     /// typed input sent by the caller
-    type Request: RpcCodec<Error = Self::Error>;
+    type Request: Codec;
     /// typed progress item emitted before completion
-    type Progress: RpcCodec<Error = Self::Error>;
+    type Progress: Codec;
     /// typed terminal response that completes the call
-    type Response: RpcCodec<Error = Self::Error>;
+    type Response: Codec;
 }

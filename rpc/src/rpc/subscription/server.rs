@@ -1,8 +1,10 @@
 use std::future::Future;
 
+use ql_codec::Encode;
+
 use crate::{
-    duplex::DuplexSender, rpc::read_eof_request, subscription::Subscription, Context, RouterConfig,
-    RpcCodec, RpcError, RpcRead, RpcStream, RpcWrite,
+    duplex::DuplexSender, rpc::read_eof_request, subscription::Subscription, Context, DecodeOwned,
+    RouterConfig, RpcError, RpcRead, RpcStream, RpcWrite,
 };
 
 pub type SubscriptionResponder<T, W> = DuplexSender<T, W>;
@@ -20,12 +22,12 @@ where
         responder: DuplexSender<M::Event, St::Writer>,
     );
 
-    fn handle_error(&self, error: &RpcError<M::Error, St::Error>) {
+    fn handle_error(&self, error: &RpcError<St::Error>) {
         let _ = error;
     }
 }
 
-pub(crate) fn handle_subscription<S, Req, Event, Err, St, H, HF, E>(
+pub(crate) fn handle_subscription<S, Req, Event, St, H, HF, E>(
     state: S,
     context: Context,
     config: RouterConfig,
@@ -34,12 +36,12 @@ pub(crate) fn handle_subscription<S, Req, Event, Err, St, H, HF, E>(
     handle_error: E,
 ) -> impl Future<Output = ()>
 where
-    Req: RpcCodec<Error = Err> + 'static,
-    Event: RpcCodec<Error = Err> + 'static,
+    Req: DecodeOwned + 'static,
+    Event: Encode + 'static,
     St: RpcStream + 'static,
     H: FnOnce(S, Context, Req, DuplexSender<Event, St::Writer>) -> HF,
     HF: Future<Output = ()>,
-    E: FnOnce(&S, &RpcError<Err, St::Error>),
+    E: FnOnce(&S, &RpcError<St::Error>),
 {
     let (mut reader, mut writer) = stream.split();
 

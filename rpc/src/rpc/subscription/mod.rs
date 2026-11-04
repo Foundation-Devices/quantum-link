@@ -1,5 +1,5 @@
 use super::Route;
-use crate::RpcCodec;
+use crate::Codec;
 
 mod client;
 mod server;
@@ -11,10 +11,8 @@ pub use self::{client::*, server::*};
 /// event frames are length-delimited and the stream ends cleanly at eof
 /// any partial trailing frame is reported as truncation on the client side
 pub trait Subscription: Route {
-    /// codec error shared by request and event values
-    type Error;
     /// typed input that starts the subscription
-    type Request: RpcCodec<Error = Self::Error>;
+    type Request: Codec;
     /// typed event yielded by the responder
-    type Event: RpcCodec<Error = Self::Error>;
+    type Event: Codec;
 }

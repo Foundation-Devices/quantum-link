@@ -1,6 +1,6 @@
 use ql_rpc::{Download, Request, Subscription};
 
-use crate::{Empty, Error};
+use crate::Empty;
 
 // COMMON TYPES
 
@@ -51,7 +51,6 @@ rpc! {
 }
 
 impl Subscription for SubscribeFirmwareInstallStatus {
-    type Error = Error;
     type Request = Empty;
     type Event = FirmwareInstallEvent;
 }
@@ -80,7 +79,6 @@ rpc! {
 }
 
 impl Request for RequestCheckFirmwareUpdate {
-    type Error = Error;
     type Request = FirmwareUpdateCheckParams;
     type Response = FirmwareUpdateCheckResponse;
 }
@@ -108,7 +106,6 @@ rpc! {
 }
 
 impl Download for DownloadFirmware {
-    type Error = Error;
     type Request = DownloadFirmwareParams;
     type ResponseHeader = DownloadFirmwareHeader;
     type PartHeader = DownloadFirmwarePartHeader;

@@ -1,21 +1,3 @@
-macro_rules! impl_codec {
-    ($ty:ty) => {
-        impl ql_rpc::RpcCodec for $ty {
-            type Error = crate::Error;
-
-            fn encode_value<B: bytes::BufMut + ?Sized>(&self, out: &mut B) {
-                $crate::codec::encode(self, out);
-            }
-
-            fn decode_value<B: bytes::Buf>(
-                bytes: &mut B,
-            ) -> Result<Self, <Self as ql_rpc::RpcCodec>::Error> {
-                $crate::codec::decode(bytes)
-            }
-        }
-    };
-}
-
 macro_rules! duplicate_route_check {
     ($($id:literal,)*) => {
         const _: () = {
@@ -114,15 +96,11 @@ macro_rules! rpc_item {
         $(#[$attr])*
         #[cfg_attr(feature = "frb", flutter_rust_bridge::frb(non_opaque))]
         $vis $kind $name $($body)+
-
-        impl_codec!($name);
     };
     (Eq; $(#[$attr:meta])* $vis:vis $kind:ident $name:ident $($body:tt)+) => {
         #[derive(Debug, Clone, PartialEq, Eq, ql_codec::Codec)]
         $(#[$attr])*
         #[cfg_attr(feature = "frb", flutter_rust_bridge::frb(non_opaque))]
         $vis $kind $name $($body)+
-
-        impl_codec!($name);
     };
 }

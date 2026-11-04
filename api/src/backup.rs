@@ -1,6 +1,6 @@
 use ql_rpc::{Download, Request, Subscription, Upload};
 
-use crate::{Empty, Error};
+use crate::Empty;
 
 // COMMON TYPES
 
@@ -29,7 +29,6 @@ rpc! {
 }
 
 impl Subscription for SubscribePassportMagicBackupEnabled {
-    type Error = Error;
     type Request = Empty;
     type Event = PassportMagicBackupEnabled;
 }
@@ -43,7 +42,6 @@ rpc! {
 }
 
 impl Subscription for SubscribeMagicBackupRestoreCompleted {
-    type Error = Error;
     type Request = Empty;
     type Event = MagicBackupRestoreResult;
 }
@@ -75,7 +73,6 @@ rpc! {
 }
 
 impl Request for RequestBackupShard {
-    type Error = Error;
     type Request = BackupShardParams;
     type Response = BackupShardResponse;
 }
@@ -97,7 +94,6 @@ rpc! {
 }
 
 impl Request for RequestRestoreShard {
-    type Error = Error;
     type Request = RestoreShardParams;
     type Response = RestoreShardResponse;
 }
@@ -116,7 +112,6 @@ rpc! {
 }
 
 impl Request for RequestPassportMagicBackupStatus {
-    type Error = Error;
     type Request = PassportMagicBackupStatusParams;
     type Response = PassportMagicBackupStatusResponse;
 }
@@ -142,7 +137,6 @@ rpc! {
 }
 
 impl Upload for UploadMagicBackup {
-    type Error = Error;
     type Request = UploadMagicBackupParams;
     type PartHeader = UploadMagicBackupPartHeader;
     type Response = UploadMagicBackupResponse;
@@ -170,7 +164,6 @@ rpc! {
 }
 
 impl Download for DownloadMagicBackup {
-    type Error = Error;
     type Request = DownloadMagicBackupParams;
     type ResponseHeader = DownloadMagicBackupHeader;
     type PartHeader = Empty;

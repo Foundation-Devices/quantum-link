@@ -13,7 +13,6 @@ mod macros;
 pub mod app_store;
 pub mod backup;
 pub mod bitcoin;
-pub mod codec;
 pub mod debug;
 pub mod firmware;
 pub mod fx;
@@ -23,12 +22,15 @@ pub mod scv;
 pub mod system;
 pub mod time;
 
-pub use ql_codec::Error;
-
 pub use self::{
-    app_store::*, backup::*, bitcoin::*, codec::Empty, debug::*, firmware::*, fx::*, key::*,
-    onboarding::*, scv::*, system::*, time::*,
+    app_store::*, backup::*, bitcoin::*, debug::*, firmware::*, fx::*, key::*, onboarding::*,
+    scv::*, system::*, time::*,
 };
+
+rpc! {
+    #[derive(Copy, Default)]
+    pub struct Empty {}
+}
 
 // naming scheme
 // Request:

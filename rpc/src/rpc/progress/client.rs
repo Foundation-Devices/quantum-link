@@ -18,7 +18,7 @@ use crate::{
 pub async fn start<M, St>(
     stream: St,
     request: &M::Request,
-) -> Result<ProgressCall<M, St::Reader>, RpcError<M::Error, St::Error>>
+) -> Result<ProgressCall<M, St::Reader>, RpcError<St::Error>>
 where
     M: Progress,
     St: RpcStream,
@@ -45,7 +45,7 @@ where
 {
     Reading(ResponseReader<M>),
     AwaitingEof(M::Response),
-    Terminal(Result<M::Response, RpcError<M::Error, T>>),
+    Terminal(Result<M::Response, RpcError<T>>),
     Done,
 }
 
@@ -53,7 +53,7 @@ enum PollStep<M, T>
 where
     M: Progress,
 {
-    Terminal(Result<M::Response, RpcError<M::Error, T>>),
+    Terminal(Result<M::Response, RpcError<T>>),
     Progress(M::Progress),
 }
 
@@ -157,7 +157,7 @@ where
     M: Progress,
     R: RpcRead,
 {
-    type Output = Result<M::Response, RpcError<M::Error, R::Error>>;
+    type Output = Result<M::Response, RpcError<R::Error>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();

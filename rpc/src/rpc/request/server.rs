@@ -1,11 +1,12 @@
 use std::{future::Future, marker::PhantomData};
 
+use ql_codec::Encode;
 use ql_common::ResetCode;
 
 use crate::{
     request::Request,
     rpc::{read_eof_request, write_eof_value},
-    Context, RouterConfig, RpcCodec, RpcError, RpcRead, RpcStream, RpcWrite,
+    Context, DecodeOwned, RouterConfig, RpcError, RpcRead, RpcStream, RpcWrite,
 };
 
 #[trait_variant::make(RequestHandler: Send)]
@@ -21,7 +22,7 @@ where
         responder: Response<M::Response, St::Writer>,
     );
 
-    fn handle_error(&self, error: &RpcError<M::Error, St::Error>) {
+    fn handle_error(&self, error: &RpcError<St::Error>) {
         let _ = error;
     }
 }
@@ -36,7 +37,7 @@ where
 
 impl<T, W> Response<T, W>
 where
-    T: RpcCodec,
+    T: Encode,
     W: RpcWrite,
 {
     pub(crate) fn new(writer: W) -> Self {
@@ -55,7 +56,7 @@ where
     }
 }
 
-pub(crate) fn handle_request<S, Req, Res, Err, St, H, HF, E>(
+pub(crate) fn handle_request<S, Req, Res, St, H, HF, E>(
     state: S,
     context: Context,
     config: RouterConfig,
@@ -64,12 +65,12 @@ pub(crate) fn handle_request<S, Req, Res, Err, St, H, HF, E>(
     handle_error: E,
 ) -> impl Future<Output = ()>
 where
-    Req: RpcCodec<Error = Err> + 'static,
-    Res: RpcCodec<Error = Err> + 'static,
+    Req: DecodeOwned + 'static,
+    Res: Encode + 'static,
     St: RpcStream + 'static,
     H: FnOnce(S, Context, Req, Response<Res, St::Writer>) -> HF,
     HF: Future<Output = ()>,
-    E: FnOnce(&S, &RpcError<Err, St::Error>),
+    E: FnOnce(&S, &RpcError<St::Error>),
 {
     let (mut reader, mut writer) = stream.split();
 

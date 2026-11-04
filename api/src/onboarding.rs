@@ -1,6 +1,6 @@
 use ql_rpc::Subscription;
 
-use crate::{Empty, Error};
+use crate::Empty;
 
 // APP ROUTES
 
@@ -32,7 +32,6 @@ rpc! {
 }
 
 impl Subscription for SubscribeOnboardingStatus {
-    type Error = Error;
     type Request = Empty;
     type Event = OnboardingState;
 }

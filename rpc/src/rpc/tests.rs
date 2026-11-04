@@ -1,7 +1,6 @@
 use std::{
     cell::RefCell,
     collections::VecDeque,
-    convert::Infallible,
     future::{ready, Future, Ready},
     rc::Rc,
     task::{Context as TaskContext, Poll, Waker},
@@ -286,7 +285,6 @@ fn request() {
     route!(Rpc, 1);
 
     impl request::Request for Rpc {
-        type Error = Infallible;
         type Request = Vec<u8>;
         type Response = Vec<u8>;
     }
@@ -295,7 +293,7 @@ fn request() {
         let (client, server) = stream_pair(chunk_size);
         let message = b"hello".to_vec();
         let client = request::call::<Rpc, _>(client, &message);
-        let server = request::handle_request::<(), Vec<u8>, Vec<u8>, Infallible, _, _, _, _>(
+        let server = request::handle_request::<(), Vec<u8>, Vec<u8>, _, _, _, _>(
             (),
             CONTEXT,
             RouterConfig::default(),
@@ -317,7 +315,6 @@ fn notification() {
     route!(Rpc, 2);
 
     impl notification::Notification for Rpc {
-        type Error = Infallible;
         type Payload = Vec<u8>;
     }
 
@@ -325,7 +322,7 @@ fn notification() {
         let (client, server) = stream_pair(chunk_size);
         let message = b"hello".to_vec();
         let client = notification::send::<Rpc, _>(client, &message);
-        let server = notification::handle_notification::<(), Vec<u8>, Infallible, _, _, _, _>(
+        let server = notification::handle_notification::<(), Vec<u8>, _, _, _, _>(
             (),
             CONTEXT,
             RouterConfig::default(),
@@ -346,7 +343,6 @@ fn subscription() {
     route!(Rpc, 3);
 
     impl subscription::Subscription for Rpc {
-        type Error = Infallible;
         type Request = Vec<u8>;
         type Event = Vec<u8>;
     }
@@ -367,20 +363,19 @@ fn subscription() {
             );
             assert!(subscription.next_event().await.is_none());
         };
-        let server =
-            subscription::handle_subscription::<(), Vec<u8>, Vec<u8>, Infallible, _, _, _, _>(
-                (),
-                CONTEXT,
-                RouterConfig::default(),
-                server,
-                |(), _, request, mut responder| async move {
-                    assert_eq!(request, b"watch".to_vec());
-                    responder.send(&b"one".to_vec()).await.unwrap();
-                    responder.send(&b"two".to_vec()).await.unwrap();
-                    responder.finish().await.unwrap();
-                },
-                |_, error| panic!("subscription failed: {error:?}"),
-            );
+        let server = subscription::handle_subscription::<(), Vec<u8>, Vec<u8>, _, _, _, _>(
+            (),
+            CONTEXT,
+            RouterConfig::default(),
+            server,
+            |(), _, request, mut responder| async move {
+                assert_eq!(request, b"watch".to_vec());
+                responder.send(&b"one".to_vec()).await.unwrap();
+                responder.send(&b"two".to_vec()).await.unwrap();
+                responder.finish().await.unwrap();
+            },
+            |_, error| panic!("subscription failed: {error:?}"),
+        );
         run(client, server);
     }
 }
@@ -391,7 +386,6 @@ fn progress() {
     route!(Rpc, 4);
 
     impl progress::Progress for Rpc {
-        type Error = Infallible;
         type Request = Vec<u8>;
         type Progress = Vec<u8>;
         type Response = Vec<u8>;
@@ -431,7 +425,6 @@ fn download() {
     route!(Rpc, 5);
 
     impl download::Download for Rpc {
-        type Error = Infallible;
         type Request = Vec<u8>;
         type ResponseHeader = Vec<u8>;
         type PartHeader = Vec<u8>;
@@ -487,7 +480,6 @@ fn upload() {
     route!(Rpc, 6);
 
     impl upload::Upload for Rpc {
-        type Error = Infallible;
         type Request = Vec<u8>;
         type PartHeader = Vec<u8>;
         type Response = Vec<u8>;
@@ -509,7 +501,7 @@ fn upload() {
             (),
             CONTEXT,
             RouterConfig {
-                max_request_bytes: 4,
+                max_request_bytes: 5,
             },
             server,
             |(), _, request, mut upload, responder| async move {
@@ -541,7 +533,6 @@ fn duplex() {
     route!(Rpc, 7);
 
     impl duplex::Duplex for Rpc {
-        type Error = Infallible;
         type InitiatorEvent = Vec<u8>;
         type ResponderEvent = Vec<u8>;
     }
