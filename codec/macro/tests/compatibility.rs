@@ -1,6 +1,6 @@
 use std::{fmt::Debug, num::NonZeroU8};
 
-use ql_codec::{Codec, Decode, Encode, Error};
+use ql_codec::{Codec, Decode, Encode, Error, Reader};
 
 mod v1 {
     use ql_codec::Codec;
@@ -45,6 +45,7 @@ mod v2 {
         Connected {
             speed: u32,
         },
+        #[codec(default)]
         Disconnected,
         #[codec(unknown)]
         Unknown,
@@ -97,7 +98,7 @@ pub struct Process {
 const V1_STATUS: &[u8] = &[
     14, // length
     4, 2, b'k', b'b', 80, // device
-    2, 0, 0, 1, 0, // events
+    2, 1, 0, 1, 1, // events
     0x02, 0x01, 0x00, 0x00, // uptime
 ];
 
@@ -105,7 +106,7 @@ const V1_STATUS: &[u8] = &[
 const V2_STATUS: &[u8] = &[
     28, // length
     9, 2, b'k', b'b', 80, 1, 2, b'A', b'1', 1, // device
-    3, 0, 4, 0xe0, 0x01, 0x00, 0x00, 3, 0, 1, 0, // events
+    3, 5, 0, 0xe0, 0x01, 0x00, 0x00, 1, 3, 1, 1, // events
     0x02, 0x01, 0x00, 0x00, // uptime
     1, 1, b'x', // tags
 ];
@@ -171,6 +172,46 @@ fn encodings_match_fixed_bytes() {
 }
 
 #[test]
+fn unit_can_grow_into_structs_and_enums() {
+    let empty = ().encode_vec();
+    assert_eq!(empty, [0]);
+    assert_eq!(
+        decode::<v1::DeviceInfo>(&empty),
+        v1::DeviceInfo {
+            name: String::new(),
+            battery: 0
+        }
+    );
+    assert_eq!(decode::<v2::UsbEvent>(&empty), v2::UsbEvent::Disconnected);
+    assert_eq!(decode::<v1::UsbEvent>(&empty), v1::UsbEvent::Unknown);
+
+    #[derive(Debug, PartialEq, Eq, Codec)]
+    struct Options {
+        event: v2::UsbEvent,
+    }
+
+    assert_eq!(
+        decode::<Options>(&empty),
+        Options {
+            event: v2::UsbEvent::Disconnected
+        }
+    );
+    let mut bytes = (
+        v1_status().device,
+        v2::UsbEvent::Connected { speed: 480 },
+        7u8,
+    )
+        .encode_vec();
+    let mut reader = Reader::new(bytes.as_slice());
+    assert_eq!(reader.decode::<((), (), u8)>().unwrap(), ((), (), 7));
+    assert!(reader.is_empty());
+
+    let mut reader = Reader::new(bytes.as_mut_slice());
+    assert_eq!(reader.decode_ref::<((), (), u8)>().unwrap(), ((), (), 7));
+    assert!(reader.is_empty());
+}
+
+#[test]
 fn integer_lists_are_aligned_to_their_size() {
     assert_eq!((1u8, vec![0x0302u16]).encode_vec(), [1, 1, 2, 3, 0]);
     assert_eq!((1u8, 2u8, vec![0x0302u16]).encode_vec(), [1, 2, 1, 0, 2, 3]);
@@ -226,8 +267,12 @@ fn old_decoder_skips_new_fields_and_variants() {
 fn undecodable_encodings() {
     // An enumerator past the known ones needs an unknown variant to land in.
     assert_eq!(
-        ChargeState::decode_bytes(&[2, 0][..]),
+        ChargeState::decode_bytes(&[1, 2][..]),
         Err(Error::InvalidDiscriminant)
+    );
+    assert_eq!(
+        ChargeState::decode_bytes(&[0][..]),
+        Err(Error::UnexpectedEof)
     );
     assert_eq!(
         PixelFormat::decode_bytes(&[9][..]),
@@ -239,6 +284,10 @@ fn undecodable_encodings() {
     // the field.
     assert_eq!(
         v1::DeviceInfo::decode_bytes(&[2, 5, b'k', b'b', b'x', b'y', b'z', 80][..]),
+        Err(Error::UnexpectedEof)
+    );
+    assert_eq!(
+        v2::UsbEvent::decode_bytes(&[3, 0, 0xe0, 0x01, 0, 0][..]),
         Err(Error::UnexpectedEof)
     );
     assert_eq!(

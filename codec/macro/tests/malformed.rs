@@ -55,9 +55,10 @@ fn corrupt_lengths() {
 #[test]
 fn invalid_values() {
     assert_eq!(
-        Command::decode_bytes(&[2, 1, 50][..]),
+        Command::decode_bytes(&[2, 2, 50][..]),
         Err(Error::InvalidDiscriminant)
     );
+    assert_eq!(<()>::decode_bytes(&[2, 1][..]), Err(Error::UnexpectedEof));
     assert_eq!(
         bool::decode_bytes(&[2][..]),
         Err(Error::InvalidDiscriminant)

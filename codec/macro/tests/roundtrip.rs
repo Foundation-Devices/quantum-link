@@ -278,7 +278,14 @@ fn messages_roundtrip() {
         SeekFrom::Current(i64::MIN),
     ] {
         roundtrip(&seek);
-        assert_eq!(seek.encode_vec()[0], seek.discriminant() as u8);
+        let bytes = seek.encode_vec();
+        let mut reader = Reader::new(bytes.as_slice());
+        let variant = reader
+            .take_len_prefixed_reader()
+            .unwrap()
+            .decode_varint::<u32>()
+            .unwrap();
+        assert_eq!(variant, seek.discriminant() as u32);
     }
 }
 

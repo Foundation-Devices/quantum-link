@@ -465,15 +465,18 @@ impl DecodeValue for bool {
 impl Encode for () {
     #[inline]
     fn encoded_len(&self) -> usize {
-        0
+        1
     }
 
-    fn encode(&self, _out: &mut Writer<impl Output>) {}
+    fn encode(&self, out: &mut Writer<impl Output>) {
+        out.put_u8(0);
+    }
 }
 
 impl DecodeValue for () {
     #[inline]
-    fn decode_value<B: ByteSlice>(_reader: &mut Reader<B>) -> Result<Self, Error> {
+    fn decode_value<B: ByteSlice>(reader: &mut Reader<B>) -> Result<Self, Error> {
+        reader.take_len_prefixed()?;
         Ok(())
     }
 

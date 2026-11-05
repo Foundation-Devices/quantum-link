@@ -7,7 +7,6 @@ pub mod app_id {
     pub const ONBOARDING: AppId = AppId::from_hex("0xdac5321775d449c11bc9c90f38067f8f");
     pub const BACKUP: AppId = AppId::from_hex("0xe19f16fcd9610bca7d026b4673f1cb06");
     pub const UPDATE: AppId = AppId::from_hex("0x6F732F75706461746500000000000000");
-    pub const BITCOIN: AppId = AppId::from_hex("0x426974636f696e2057616c6c65740000");
     pub const DEBUG: AppId = AppId::from_hex("0x8ec0b4ea99704f9f973f5d7b7a3294b2");
 }
 

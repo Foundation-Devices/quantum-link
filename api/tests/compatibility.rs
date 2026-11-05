@@ -8,8 +8,8 @@ fn wire_format_is_stable() {
     }
     .encode_vec();
     assert_eq!(&bytes[..], &[3, 2, b'h', b'i']);
-    assert_eq!(PassportModel::Prime.encode_vec(), [3, 0]);
-    assert_eq!(VerificationResult::Success.encode_vec(), [1, 0]);
+    assert_eq!(PassportModel::Prime.encode_vec(), [1, 3]);
+    assert_eq!(VerificationResult::Success.encode_vec(), [1, 1]);
     assert_eq!(Empty {}.encode_vec(), [0]);
 
     let rate = ExchangeRate {
@@ -105,14 +105,14 @@ fn empty_headers_and_nested_permissions_can_grow() {
 
 #[test]
 fn unknown_events_and_descriptive_values_skip_their_payloads() {
-    let mut reader = Reader::new(&[127, 3, 1, 2, 3][..]);
+    let mut reader = Reader::new(&[4, 127, 1, 2, 3][..]);
     assert_eq!(
         AppActivityEvent::decode(&mut reader).unwrap(),
         AppActivityEvent::Unknown
     );
     assert!(reader.is_empty());
 
-    let mut reader = Reader::new(&[4, 6, 0, 127, 3, 1, 2, 3][..]);
+    let mut reader = Reader::new(&[7, 4, 0, 4, 127, 1, 2, 3][..]);
     assert_eq!(
         FirmwareInstallEvent::decode(&mut reader).unwrap(),
         FirmwareInstallEvent::Error {
@@ -122,7 +122,7 @@ fn unknown_events_and_descriptive_values_skip_their_payloads() {
     );
     assert!(reader.is_empty());
 
-    let bytes = &[1, 3, 1, 2, 3][..];
+    let bytes = &[4, 1, 1, 2, 3][..];
     assert_eq!(
         VerificationResult::decode_bytes(bytes).unwrap(),
         VerificationResult::Success
@@ -131,11 +131,7 @@ fn unknown_events_and_descriptive_values_skip_their_payloads() {
 
 #[test]
 fn unknown_operation_outcomes_and_protocol_commands_are_rejected() {
-    let bytes = &[127, 3, 1, 2, 3][..];
-    assert_eq!(
-        SignPsbtResponse::decode_bytes(bytes),
-        Err(Error::InvalidDiscriminant)
-    );
+    let bytes = &[4, 127, 1, 2, 3][..];
     assert_eq!(
         MagicBackupRestoreResult::decode_bytes(bytes),
         Err(Error::InvalidDiscriminant)
@@ -149,7 +145,7 @@ fn unknown_operation_outcomes_and_protocol_commands_are_rejected() {
         Err(Error::InvalidDiscriminant)
     );
     assert_eq!(
-        RunSecurityCheckResponderEvent::decode_bytes(&[2, 5, 127, 3, 1, 2, 3][..]),
+        RunSecurityCheckResponderEvent::decode_bytes(&[6, 2, 4, 127, 1, 2, 3][..]),
         Err(Error::InvalidDiscriminant)
     );
 }
@@ -164,7 +160,7 @@ fn malformed_payloads_are_rejected() {
         assert!(EchoParams::decode_bytes(bytes).is_err());
     }
     assert_eq!(
-        AppActivityEvent::decode_bytes(&[127, 3, 1][..]),
+        AppActivityEvent::decode_bytes(&[4, 127, 1][..]),
         Err(Error::UnexpectedEof)
     );
 }
