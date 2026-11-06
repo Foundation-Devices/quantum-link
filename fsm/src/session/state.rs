@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::Duration;
 
 use bytes::Bytes;
 use indexmap::IndexMap;
@@ -14,8 +14,8 @@ use super::{
     tracked::{LossRecovery, TrackedRecord},
 };
 pub struct SessionState<M> {
-    pub last_activity_at: Instant,
-    pub last_inbound_at: Instant,
+    pub last_activity_at: Duration,
+    pub last_inbound_at: Duration,
     pub next_stream_ordinal: u32,
     pub next_record_seq: RecordSeq,
     pub next_write_id: u64,

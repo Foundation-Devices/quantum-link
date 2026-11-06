@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use bytes::Bytes;
 use ql_codec::Varint;
@@ -99,7 +99,7 @@ fn read_stream_all(fsm: &mut super::SessionFsm<()>, stream_id: StreamId) -> Vec<
 
 fn next_outbound<M: StreamMeta>(
     fsm: &mut super::SessionFsm<M>,
-    now: Instant,
+    now: Duration,
 ) -> Option<(RecordSeq, Vec<SessionFrame<Vec<u8>>>)> {
     let (write_id, builder) = fsm.take_next_write(now)?;
     if let Some(write_id) = write_id {
@@ -113,7 +113,7 @@ fn next_outbound<M: StreamMeta>(
 
 fn drain_outbound(
     fsm: &mut super::SessionFsm<()>,
-    now: Instant,
+    now: Duration,
     limit: usize,
 ) -> Vec<(RecordSeq, Vec<SessionFrame<Vec<u8>>>)> {
     let mut records = Vec::new();
@@ -129,7 +129,7 @@ fn drain_outbound(
 
 fn receive_events<M: StreamMeta>(
     fsm: &mut super::SessionFsm<M>,
-    now: Instant,
+    now: Duration,
     seq: RecordSeq,
     record: &[SessionFrame<Vec<u8>>],
 ) -> Vec<SessionEvent> {
@@ -147,7 +147,7 @@ fn receive_events<M: StreamMeta>(
 
 #[test]
 fn outbound_record_seq_increments_monotonically() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm =
         super::SessionFsm::<()>::new(SessionConfig::default(), SessionParams::default(), now);
     let stream_id = open_stream_id(&mut fsm);
@@ -164,7 +164,7 @@ fn outbound_record_seq_increments_monotonically() {
 
 #[test]
 fn stream_data_is_scheduled_round_robin() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let config = SessionConfig::default();
     let payload = vec![b'x'; config.stream_send_buffer_size];
     let mut fsm = super::SessionFsm::<()>::new(config, SessionParams::default(), now);
@@ -201,7 +201,7 @@ fn stream_data_is_scheduled_round_robin() {
 
 #[test]
 fn retransmit_uses_new_record_seq() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm = super::SessionFsm::<()>::new(
         SessionConfig {
             retransmit_timeout: Duration::from_millis(100),
@@ -225,7 +225,7 @@ fn retransmit_uses_new_record_seq() {
 
 #[test]
 fn retransmitted_record_ack_releases_stream_data() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm = super::SessionFsm::<()>::new(
         SessionConfig {
             retransmit_timeout: Duration::from_millis(20),
@@ -261,7 +261,7 @@ fn retransmitted_record_ack_releases_stream_data() {
 
 #[test]
 fn acknowledged_rtt_updates_retransmit_timeout() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm = super::SessionFsm::<()>::new(
         SessionConfig {
             retransmit_timeout: Duration::from_millis(100),
@@ -296,7 +296,7 @@ fn acknowledged_rtt_updates_retransmit_timeout() {
 
 #[test]
 fn retransmit_timeout_backs_off() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm = super::SessionFsm::<()>::new(
         SessionConfig {
             retransmit_timeout: Duration::from_millis(20),
@@ -325,7 +325,7 @@ fn retransmit_timeout_backs_off() {
 fn tracked_record_count_is_bounded() {
     const PAYLOAD_LEN: usize = 1024;
 
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm = super::SessionFsm::<()>::new(
         SessionConfig {
             record_max_size: SessionRecordBuilder::MIN_CAPACITY
@@ -361,7 +361,7 @@ fn tracked_record_count_is_bounded() {
 fn lost_record_on_one_stream_does_not_block_another_stream() {
     const PAYLOAD_LEN: usize = 40;
 
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm = super::SessionFsm::<()>::new(
         SessionConfig {
             record_max_size: SessionRecordBuilder::MIN_CAPACITY
@@ -409,7 +409,7 @@ fn lost_record_on_one_stream_does_not_block_another_stream() {
 
 #[test]
 fn ack_reopens_write_capacity() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm = super::SessionFsm::<TestMeta>::new(
         SessionConfig {
             stream_send_buffer_size: 4,
@@ -450,7 +450,7 @@ fn ack_reopens_write_capacity() {
 
 #[test]
 fn ack_of_fin_notifies_metadata_once() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm =
         super::SessionFsm::<TestMeta>::new(SessionConfig::default(), SessionParams::default(), now);
     let stream_id = fsm
@@ -506,7 +506,7 @@ fn ack_of_fin_notifies_metadata_once() {
 
 #[test]
 fn commit_stream_read_is_what_advances_stream_window() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm = super::SessionFsm::<()>::new(
         SessionConfig {
             ack_delay: Duration::ZERO,
@@ -565,7 +565,7 @@ fn commit_stream_read_is_what_advances_stream_window() {
 
 #[test]
 fn lost_stream_window_is_resent_after_a_timeout() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm = super::SessionFsm::<()>::new(
         SessionConfig {
             ack_delay: Duration::ZERO,
@@ -606,7 +606,7 @@ fn lost_stream_window_is_resent_after_a_timeout() {
 
 #[test]
 fn lost_ping_is_resent_after_a_timeout() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm = super::SessionFsm::<()>::new(
         SessionConfig {
             keepalive_interval: Duration::ZERO,
@@ -630,7 +630,7 @@ fn lost_ping_is_resent_after_a_timeout() {
 
 #[test]
 fn pure_ack_only_records_are_fire_and_forget() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let config = SessionConfig {
         ack_delay: Duration::ZERO,
         ..SessionConfig::default()
@@ -665,7 +665,7 @@ fn pure_ack_only_records_are_fire_and_forget() {
 
 #[test]
 fn inbound_stream_data_queues_opened_and_notifies_metadata() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm =
         super::SessionFsm::<TestMeta>::new(SessionConfig::default(), SessionParams::default(), now);
     let stream_id = StreamId(1);
@@ -697,7 +697,7 @@ fn inbound_stream_data_queues_opened_and_notifies_metadata() {
 
 #[test]
 fn readable_callback_can_consume_stream_data() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm =
         super::SessionFsm::<TestMeta>::new(SessionConfig::default(), SessionParams::default(), now);
     let stream_id = fsm
@@ -725,7 +725,7 @@ fn readable_callback_can_consume_stream_data() {
 
 #[test]
 fn inbound_empty_fin_notifies_metadata_immediately() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm =
         super::SessionFsm::<TestMeta>::new(SessionConfig::default(), SessionParams::default(), now);
     let stream_id = StreamId(1);
@@ -746,7 +746,7 @@ fn inbound_empty_fin_notifies_metadata_immediately() {
 
 #[test]
 fn local_stream_reset_is_reliable_and_notifies_metadata() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm = super::SessionFsm::<TestMeta>::new(
         SessionConfig {
             retransmit_timeout: Duration::from_millis(100),
@@ -791,7 +791,7 @@ fn local_stream_reset_is_reliable_and_notifies_metadata() {
 
 #[test]
 fn stream_ids_follow_even_odd_xid_ordering() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let even = StreamParity::for_local(QID([1; QID::SIZE]), QID([2; QID::SIZE]));
     let odd = StreamParity::for_local(QID([2; QID::SIZE]), QID([1; QID::SIZE]));
 
@@ -826,7 +826,7 @@ fn stream_ids_follow_even_odd_xid_ordering() {
 
 #[test]
 fn duplicate_stream_data_is_not_redelivered() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm =
         super::SessionFsm::<()>::new(SessionConfig::default(), SessionParams::default(), now);
     let stream_id = StreamId(1);
@@ -850,7 +850,7 @@ fn duplicate_stream_data_is_not_redelivered() {
 
 #[test]
 fn duplicate_remote_reset_after_reap_is_ignored() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm =
         super::SessionFsm::<()>::new(SessionConfig::default(), SessionParams::default(), now);
     let reset = StreamReset {
@@ -875,7 +875,7 @@ fn duplicate_remote_reset_after_reap_is_ignored() {
 
 #[test]
 fn late_remote_stream_data_after_reset_is_ignored() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm =
         super::SessionFsm::<()>::new(SessionConfig::default(), SessionParams::default(), now);
     let stream_id = StreamId(1);
@@ -906,7 +906,7 @@ fn late_remote_stream_data_after_reset_is_ignored() {
 
 #[test]
 fn stream_reset_in_its_opening_record_leaves_stale_events() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm =
         super::SessionFsm::<()>::new(SessionConfig::default(), SessionParams::default(), now);
     let stream_id = StreamId(1);
@@ -934,7 +934,7 @@ fn stream_reset_in_its_opening_record_leaves_stale_events() {
 
 #[test]
 fn one_sided_remote_reset_notifies_metadata_and_preserves_stream() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm =
         super::SessionFsm::<TestMeta>::new(SessionConfig::default(), SessionParams::default(), now);
     let stream_id = StreamId(1);
@@ -974,7 +974,7 @@ fn one_sided_remote_reset_notifies_metadata_and_preserves_stream() {
 
 #[test]
 fn draining_the_last_bytes_reaps_a_terminal_stream_on_next_poll() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm =
         super::SessionFsm::<TestMeta>::new(SessionConfig::default(), SessionParams::default(), now);
     let stream_id = StreamId(1);
@@ -1013,7 +1013,7 @@ fn draining_the_last_bytes_reaps_a_terminal_stream_on_next_poll() {
 
 #[test]
 fn duplicate_finished_remote_data_after_read_is_ignored() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm =
         super::SessionFsm::<()>::new(SessionConfig::default(), SessionParams::default(), now);
     let stream_id = StreamId(1);
@@ -1040,7 +1040,7 @@ fn duplicate_finished_remote_data_after_read_is_ignored() {
 
 #[test]
 fn duplicate_finished_remote_data_before_read_is_ignored() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm =
         super::SessionFsm::<()>::new(SessionConfig::default(), SessionParams::default(), now);
     let stream_id = StreamId(1);
@@ -1067,7 +1067,7 @@ fn duplicate_finished_remote_data_before_read_is_ignored() {
 
 #[test]
 fn out_of_order_remote_stream_first_observations_still_open_once_each() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm =
         super::SessionFsm::<()>::new(SessionConfig::default(), SessionParams::default(), now);
     let reset3 = vec![SessionFrame::StreamReset(StreamReset {
@@ -1103,7 +1103,7 @@ fn out_of_order_remote_stream_first_observations_still_open_once_each() {
 
 #[test]
 fn invalid_remote_stream_reset_closes_session() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm =
         super::SessionFsm::<()>::new(SessionConfig::default(), SessionParams::default(), now);
 
@@ -1126,7 +1126,7 @@ fn invalid_remote_stream_reset_closes_session() {
 
 #[test]
 fn close_does_not_ack_rejected_record_seq() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm = super::SessionFsm::<()>::new(
         SessionConfig {
             ack_delay: Duration::ZERO,
@@ -1156,7 +1156,7 @@ fn close_does_not_ack_rejected_record_seq() {
 
 #[test]
 fn inbound_unpair_closes_session() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm =
         super::SessionFsm::<()>::new(SessionConfig::default(), SessionParams::default(), now);
 
@@ -1172,7 +1172,7 @@ fn inbound_unpair_closes_session() {
 
 #[test]
 fn initial_peer_stream_receive_window_limits_first_send() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm = super::SessionFsm::<()>::new(
         SessionConfig::default(),
         SessionParams {
@@ -1215,7 +1215,7 @@ fn initial_peer_stream_receive_window_limits_first_send() {
 
 #[test]
 fn default_stream_options_inherit_session_and_peer_values() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm = super::SessionFsm::<()>::new(
         SessionConfig {
             stream_send_buffer_size: 4,
@@ -1253,7 +1253,7 @@ fn default_stream_options_inherit_session_and_peer_values() {
 
 #[test]
 fn opening_frame_carries_normalized_stream_options() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm =
         super::SessionFsm::<()>::new(SessionConfig::default(), SessionParams::default(), now);
     let stream_id = fsm
@@ -1288,7 +1288,7 @@ fn opening_frame_carries_normalized_stream_options() {
 
 #[test]
 fn stream_open_applies_granted_and_requested_receive_windows() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm = super::SessionFsm::<()>::new(
         SessionConfig {
             initial_stream_receive_window: 8,
@@ -1331,7 +1331,7 @@ fn stream_open_applies_granted_and_requested_receive_windows() {
 
 #[test]
 fn opening_payload_cannot_spend_requested_credit() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm = super::SessionFsm::<()>::new(
         SessionConfig {
             initial_stream_receive_window: 8,
@@ -1363,7 +1363,7 @@ fn opening_payload_cannot_spend_requested_credit() {
 
 #[test]
 fn streams_have_independent_send_buffer_sizes() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm =
         super::SessionFsm::<()>::new(SessionConfig::default(), SessionParams::default(), now);
     let small = fsm
@@ -1395,7 +1395,7 @@ fn streams_have_independent_send_buffer_sizes() {
 
 #[test]
 fn sparse_out_of_order_ack_ranges_page_and_quiesce() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let sender_config = SessionConfig {
         record_max_size: SessionRecordBuilder::MIN_CAPACITY
             + 1 // discriminator byte
@@ -1478,7 +1478,7 @@ fn sparse_out_of_order_ack_ranges_page_and_quiesce() {
 
 #[test]
 fn stream_header_must_leave_room_for_payload() {
-    let now = Instant::now();
+    let now = Duration::from_secs(1);
     let mut fsm = super::SessionFsm::<()>::new(
         SessionConfig {
             record_max_size: SessionRecordBuilder::MIN_CAPACITY

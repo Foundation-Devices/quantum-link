@@ -1,4 +1,4 @@
-use std::{ops::RangeInclusive, time::Instant};
+use std::{ops::RangeInclusive, time::Duration};
 
 use ql_wire::{RecordAck, RecordAckBuilder, RecordSeq};
 
@@ -7,14 +7,14 @@ use super::range_set::{single_range, RangeSet};
 #[derive(Debug, Clone)]
 pub struct AckTracker {
     pending_ack: RangeSet,
-    ack_due_at: Option<Instant>,
+    ack_due_at: Option<Duration>,
     pending_ack_range_limit: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingAck {
     pub ack: RecordAck,
-    pub due_at: Instant,
+    pub due_at: Duration,
     pub includes_all_pending: bool,
 }
 
@@ -33,11 +33,11 @@ impl AckTracker {
         self.trim_pending_ack_ranges();
     }
 
-    pub fn ack_deadline(&self) -> Option<Instant> {
+    pub fn ack_deadline(&self) -> Option<Duration> {
         self.ack_due_at
     }
 
-    pub fn schedule_ack(&mut self, due_at: Instant) {
+    pub fn schedule_ack(&mut self, due_at: Duration) {
         self.ack_due_at = Some(self.ack_due_at.map_or(due_at, |old| old.min(due_at)));
     }
 
@@ -77,7 +77,7 @@ impl AckTracker {
         }
     }
 
-    pub fn restore_acked_ranges(&mut self, ack: &RecordAck, due_at: Instant) {
+    pub fn restore_acked_ranges(&mut self, ack: &RecordAck, due_at: Duration) {
         for range in ack.ranges() {
             self.pending_ack.insert(from_ack_range(range));
         }
@@ -105,7 +105,7 @@ fn from_ack_range(range: RangeInclusive<RecordSeq>) -> std::ops::Range<u64> {
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     use ql_wire::RecordSeq;
 
@@ -121,7 +121,7 @@ mod tests {
 
     #[test]
     fn contiguous_records_emit_one_ack_range() {
-        let now = Instant::now();
+        let now = Duration::from_secs(1);
         let mut ack_tracker = AckTracker::new(8);
 
         ack_tracker.push(RecordSeq(10));
@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn sparse_records_emit_descending_ack_ranges() {
-        let now = Instant::now();
+        let now = Duration::from_secs(1);
         let mut ack_tracker = AckTracker::new(8);
 
         ack_tracker.push(RecordSeq(10));
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn pending_ack_range_limit_drops_oldest_low_ranges() {
-        let now = Instant::now();
+        let now = Duration::from_secs(1);
         let mut ack_tracker = AckTracker::new(2);
 
         ack_tracker.push(RecordSeq(1));
@@ -164,7 +164,7 @@ mod tests {
 
     #[test]
     fn emitting_an_ack_retires_only_its_own_ranges() {
-        let now = Instant::now();
+        let now = Duration::from_secs(1);
         let mut ack_tracker = AckTracker::new(8);
 
         ack_tracker.push(RecordSeq(1));

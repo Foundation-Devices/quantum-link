@@ -1,4 +1,4 @@
-use std::{num::NonZeroU32, time::Instant};
+use std::{num::NonZeroU32, time::Duration};
 
 use ql_common::QID;
 use ql_wire::{
@@ -14,7 +14,7 @@ pub struct QlFsmState<M> {
     pub armed_pairing_token: Option<PairingToken>,
     pub handshake: Option<(RouteHeader, QlHandshakeRecord)>,
     pub link: LinkState<M>,
-    pub now: Instant,
+    pub now: Duration,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,13 +43,13 @@ pub struct ConnectedState<M> {
 #[derive(Debug, Clone)]
 pub struct InitiatorState<H> {
     pub handshake: H,
-    pub deadline: Instant,
+    pub deadline: Duration,
 }
 
 #[derive(Debug, Clone)]
 pub struct XxResponderState {
     pub handshake: XxHandshake,
-    pub deadline: Instant,
+    pub deadline: Duration,
 }
 
 impl<M> LinkState<M> {
@@ -86,7 +86,7 @@ impl<M> LinkState<M> {
         self.connected_mut().ok_or(NoSessionError)
     }
 
-    pub fn handshake_deadline(&self) -> Option<Instant> {
+    pub fn handshake_deadline(&self) -> Option<Duration> {
         match self {
             Self::Idle | Self::Connected(_) => None,
             Self::IkInitiator(state) => Some(state.deadline),

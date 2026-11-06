@@ -31,10 +31,7 @@ pub(crate) mod state;
 #[cfg(test)]
 mod tests;
 
-use std::{
-    collections::VecDeque,
-    time::{Duration, Instant},
-};
+use std::{collections::VecDeque, time::Duration};
 
 pub use bytes::Bytes;
 use bytes::BytesMut;
@@ -184,6 +181,8 @@ impl Default for QlFsmConfig {
 }
 
 /// synchronous driver for peer binding, handshake, and encrypted streams
+///
+/// every `now` and deadline is the time since an origin the caller picks on a monotonic clock
 pub struct QlFsm<M: StreamMeta> {
     config: QlFsmConfig,
     identity: QlIdentity,
@@ -193,7 +192,7 @@ pub struct QlFsm<M: StreamMeta> {
 
 impl<M: StreamMeta> QlFsm<M> {
     /// creates a new `QlFsm`
-    pub fn new(config: QlFsmConfig, identity: QlIdentity, now: Instant) -> Self {
+    pub fn new(config: QlFsmConfig, identity: QlIdentity, now: Duration) -> Self {
         Self {
             config,
             identity,
@@ -251,19 +250,19 @@ impl<M: StreamMeta> QlFsm<M> {
     }
 
     /// starts an outbound xx handshake using a pairing invite
-    pub fn connect_xx(&mut self, now: Instant, invite: PairingInvite, crypto: &impl QlCrypto) {
+    pub fn connect_xx(&mut self, now: Duration, invite: PairingInvite, crypto: &impl QlCrypto) {
         self.state.now = now;
         fsm::handle_connect_xx(self, invite, crypto);
     }
 
     /// starts an IK handshake with the currently bound peer
-    pub fn connect_ik(&mut self, now: Instant, crypto: &impl QlCrypto) -> Result<(), NoPeerError> {
+    pub fn connect_ik(&mut self, now: Duration, crypto: &impl QlCrypto) -> Result<(), NoPeerError> {
         self.state.now = now;
         fsm::handle_connect_ik(self, crypto)
     }
 
     /// starts a KK handshake with the currently bound peer
-    pub fn connect_kk(&mut self, now: Instant, crypto: &impl QlCrypto) -> Result<(), NoPeerError> {
+    pub fn connect_kk(&mut self, now: Duration, crypto: &impl QlCrypto) -> Result<(), NoPeerError> {
         self.state.now = now;
         fsm::handle_connect_kk(self, crypto)
     }
@@ -274,7 +273,7 @@ impl<M: StreamMeta> QlFsm<M> {
     /// unless something else still references its buffer
     pub fn receive(
         &mut self,
-        now: Instant,
+        now: Duration,
         bytes: impl Into<Bytes>,
         crypto: &impl QlCrypto,
     ) -> Result<bool, ReceiveError> {
@@ -288,13 +287,13 @@ impl<M: StreamMeta> QlFsm<M> {
     }
 
     /// advances time-based state
-    pub fn on_timer(&mut self, now: Instant, crypto: &impl QlCrypto) {
+    pub fn on_timer(&mut self, now: Duration, crypto: &impl QlCrypto) {
         self.state.now = now;
         fsm::on_timer(self, crypto);
     }
 
     /// returns the next timer deadline, if any
-    pub fn next_deadline(&self) -> Option<Instant> {
+    pub fn next_deadline(&self) -> Option<Duration> {
         fsm::next_deadline(self)
     }
 
@@ -305,7 +304,7 @@ impl<M: StreamMeta> QlFsm<M> {
     /// if it is `None`, the record is fire-and-forget
     pub fn take_next_write(
         &mut self,
-        now: Instant,
+        now: Duration,
         crypto: &impl QlCrypto,
     ) -> Option<OutboundWrite> {
         self.state.now = now;
@@ -315,7 +314,7 @@ impl<M: StreamMeta> QlFsm<M> {
     /// completes a `SessionWriteId` from `take_next_write` with the transport outcome
     ///
     /// call this at most once for each returned `SessionWriteId`
-    pub fn complete_write(&mut self, now: Instant, write_id: WriteId, success: bool) {
+    pub fn complete_write(&mut self, now: Duration, write_id: WriteId, success: bool) {
         self.state.now = now;
         fsm::complete_write(self, write_id, success);
     }

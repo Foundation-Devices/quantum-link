@@ -99,6 +99,7 @@ struct TestPlatform {
     fail_encrypted_write_at: Option<usize>,
     write_delay: Duration,
     write_stats: Option<WriteStats>,
+    origin: tokio::time::Instant,
 }
 
 struct TestInbound {
@@ -167,6 +168,7 @@ impl TestPlatform {
                 fail_encrypted_write_at,
                 write_delay,
                 write_stats,
+                origin: tokio::time::Instant::now(),
             },
             outbound_rx,
             inbound_messages_tx,
@@ -313,20 +315,22 @@ impl TestPair {
 }
 
 struct TokioTimer {
+    origin: tokio::time::Instant,
     sleep: Pin<Box<Sleep>>,
 }
 
 impl TokioTimer {
-    fn new() -> Self {
+    fn new(origin: tokio::time::Instant) -> Self {
         Self {
+            origin,
             sleep: Box::pin(tokio::time::sleep_until(parked_deadline())),
         }
     }
 }
 
 impl QlTimer for TokioTimer {
-    fn set_deadline(mut self: Pin<&mut Self>, deadline: Option<std::time::Instant>) {
-        let deadline = deadline.map_or_else(parked_deadline, tokio::time::Instant::from_std);
+    fn set_deadline(mut self: Pin<&mut Self>, deadline: Option<Duration>) {
+        let deadline = deadline.map_or_else(parked_deadline, |deadline| self.origin + deadline);
         self.as_mut().get_mut().sleep.as_mut().reset(deadline);
     }
 
@@ -343,6 +347,10 @@ impl crate::platform::QlPlatform for TestPlatform {
 
     fn crypto(&self) -> &Self::Crypto {
         &self.crypto
+    }
+
+    fn now(&self) -> Duration {
+        self.origin.elapsed()
     }
 
     fn write_message(&self, message: Vec<u8>) -> Self::WriteMessageFut<'_> {
@@ -392,7 +400,7 @@ impl crate::platform::QlPlatform for TestPlatform {
     }
 
     fn timer(&self) -> Self::Timer {
-        TokioTimer::new()
+        TokioTimer::new(self.origin)
     }
 
     fn persist_peer(&self, _peer: PeerBundle) {}

@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, time::Instant};
+use std::{collections::VecDeque, time::Duration};
 
 use bytes::BytesMut;
 use ql_codec::Reader;
@@ -169,7 +169,7 @@ pub fn on_timer<M: StreamMeta>(fsm: &mut QlFsm<M>, crypto: &impl QlCrypto) {
     finish_termination(fsm, event, crypto);
 }
 
-pub fn next_deadline<M: StreamMeta>(fsm: &QlFsm<M>) -> Option<Instant> {
+pub fn next_deadline<M: StreamMeta>(fsm: &QlFsm<M>) -> Option<Duration> {
     [
         handshake::next_handshake_deadline(fsm),
         fsm.state

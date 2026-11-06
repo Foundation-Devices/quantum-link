@@ -4,7 +4,6 @@ use std::{
     future::Future,
     pin::{pin, Pin},
     task::{Context, Poll},
-    time::Instant,
 };
 
 use async_channel::Recv;
@@ -32,7 +31,7 @@ impl<P: QlPlatform> Runtime<P> {
             tx,
         } = self;
 
-        let mut fsm = QlFsm::<DriverStreamIo>::new(config.fsm, identity, Instant::now());
+        let mut fsm = QlFsm::<DriverStreamIo>::new(config.fsm, identity, platform.now());
 
         let mut state = DriverState {
             runtime_tx: tx,
@@ -74,7 +73,7 @@ impl<P: QlPlatform> Runtime<P> {
                 }
                 DriverStep::Inbound(bytes) => {
                     log::trace!("received transport frame: len={}", bytes.len());
-                    if let Err(e) = fsm.receive(Instant::now(), bytes, platform.crypto()) {
+                    if let Err(e) = fsm.receive(platform.now(), bytes, platform.crypto()) {
                         log::info!("receive rejected frame: error={e:?}");
                         platform.handle_recv_error(e);
                     }
@@ -86,12 +85,12 @@ impl<P: QlPlatform> Runtime<P> {
                         "write completed: success={success} index={index} write_id={write_id:?}",
                     );
                     if let Some(write_id) = write_id {
-                        fsm.complete_write(Instant::now(), write_id, success);
+                        fsm.complete_write(platform.now(), write_id, success);
                     }
                 }
                 DriverStep::TimerExpired => {
                     log::trace!("timer expired");
-                    fsm.on_timer(Instant::now(), platform.crypto());
+                    fsm.on_timer(platform.now(), platform.crypto());
                 }
                 DriverStep::Closed => {
                     log::debug!(
@@ -185,7 +184,7 @@ impl DriverState {
             }
             Command::Connect => {
                 log::info!("starting IK connect");
-                if fsm.connect_ik(Instant::now(), platform.crypto()).is_err() {
+                if fsm.connect_ik(platform.now(), platform.crypto()).is_err() {
                     log::warn!("IK connect ignored: no bound peer");
                 }
             }
@@ -199,7 +198,7 @@ impl DriverState {
             }
             Command::StartPairing { invite } => {
                 log::info!(" starting XX pairing");
-                fsm.connect_xx(Instant::now(), invite, platform.crypto());
+                fsm.connect_xx(platform.now(), invite, platform.crypto());
             }
             Command::CloseSession { code } => {
                 log::info!("closing session: code={code:?}");
@@ -327,7 +326,7 @@ impl DriverState {
             let Some(write) = self
                 .terminal_write
                 .take()
-                .or_else(|| fsm.take_next_write(Instant::now(), platform.crypto()))
+                .or_else(|| fsm.take_next_write(platform.now(), platform.crypto()))
             else {
                 break;
             };
