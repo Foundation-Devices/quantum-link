@@ -2,7 +2,7 @@ use std::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
-    time::Instant,
+    time::Duration,
 };
 
 use ql_common::{StreamInfo, QID};
@@ -10,7 +10,8 @@ use ql_fsm::{PeerStatus, ReceiveError};
 use ql_wire::{PeerBundle, QlCrypto};
 
 pub trait QlTimer {
-    fn set_deadline(self: Pin<&mut Self>, deadline: Option<Instant>);
+    /// `deadline` is on the clock of [`QlPlatform::now`].
+    fn set_deadline(self: Pin<&mut Self>, deadline: Option<Duration>);
     fn poll_wait(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()>;
 }
 
@@ -27,6 +28,9 @@ pub trait QlPlatform {
     type Inbound: QlInbound;
 
     fn crypto(&self) -> &Self::Crypto;
+    /// Monotonic time since an origin the platform picks, so the runtime never reads a system
+    /// clock itself (`std::time::Instant::now` panics on wasm32-unknown-unknown).
+    fn now(&self) -> Duration;
     fn write_message(&self, message: Vec<u8>) -> Self::WriteMessageFut<'_>;
     /// Returns the platform's inbound transport poller.
     ///

@@ -114,7 +114,7 @@ pub fn handle_timer<M: StreamMeta>(fsm: &mut QlFsm<M>) {
     emit_peer_status(fsm, fsm.state.link.status());
 }
 
-pub fn next_handshake_deadline<M: StreamMeta>(fsm: &QlFsm<M>) -> Option<std::time::Instant> {
+pub fn next_handshake_deadline<M: StreamMeta>(fsm: &QlFsm<M>) -> Option<std::time::Duration> {
     fsm.state.link.handshake_deadline()
 }
 

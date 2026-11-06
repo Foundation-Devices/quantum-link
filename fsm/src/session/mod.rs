@@ -14,7 +14,7 @@ mod tracked;
 #[cfg(test)]
 mod tests;
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use bytes::Bytes;
 use indexmap::IndexMap;
@@ -137,7 +137,7 @@ pub struct SessionFsm<M> {
 }
 
 impl<M: StreamMeta> SessionFsm<M> {
-    pub fn new(mut config: SessionConfig, params: SessionParams, now: Instant) -> Self {
+    pub fn new(mut config: SessionConfig, params: SessionParams, now: Duration) -> Self {
         config.record_max_size = config
             .record_max_size
             .max(SessionRecordBuilder::MIN_CAPACITY);
@@ -264,8 +264,13 @@ impl<M: StreamMeta> SessionFsm<M> {
         self.state.replay_window.is_replay(seq)
     }
 
-    pub fn receive<I>(&mut self, now: Instant, seq: RecordSeq, frames: I, sink: &mut impl EventSink)
-    where
+    pub fn receive<I>(
+        &mut self,
+        now: Duration,
+        seq: RecordSeq,
+        frames: I,
+        sink: &mut impl EventSink,
+    ) where
         I: IntoIterator<Item = Result<SessionFrame<Bytes>, ql_wire::Error>>,
     {
         self.collect_timeouts(now);
@@ -316,7 +321,7 @@ impl<M: StreamMeta> SessionFsm<M> {
         }
     }
 
-    pub fn complete_write(&mut self, now: Instant, write_id: u64, success: bool) {
+    pub fn complete_write(&mut self, now: Duration, write_id: u64, success: bool) {
         if success {
             let Some(record) = self.state.tracked_records.get_mut(&write_id) else {
                 return;
@@ -348,7 +353,7 @@ impl<M: StreamMeta> SessionFsm<M> {
         }
     }
 
-    pub fn on_timer(&mut self, now: Instant, sink: &mut impl EventSink) {
+    pub fn on_timer(&mut self, now: Duration, sink: &mut impl EventSink) {
         self.collect_timeouts(now);
         if !self.config.peer_timeout.is_zero()
             && self.state.last_inbound_at + self.config.peer_timeout <= now
@@ -363,7 +368,7 @@ impl<M: StreamMeta> SessionFsm<M> {
         }
     }
 
-    pub fn next_deadline(&self) -> Option<Instant> {
+    pub fn next_deadline(&self) -> Option<Duration> {
         let ack_deadline = self.state.ack_tracker.ack_deadline();
         let rto = self.state.loss_recovery.rto();
         let retransmit_deadline = self
@@ -388,7 +393,10 @@ impl<M: StreamMeta> SessionFsm<M> {
         .min()
     }
 
-    pub fn take_next_write(&mut self, now: Instant) -> Option<(Option<u64>, SessionRecordBuilder)> {
+    pub fn take_next_write(
+        &mut self,
+        now: Duration,
+    ) -> Option<(Option<u64>, SessionRecordBuilder)> {
         const TRACKED_RECORD_LIMIT: usize = 64;
 
         self.collect_timeouts(now);
@@ -420,7 +428,10 @@ impl<M: StreamMeta> SessionFsm<M> {
         Some((write_id, builder))
     }
 
-    fn build_next_record(&mut self, now: Instant) -> Option<(SessionRecordBuilder, TrackedRecord)> {
+    fn build_next_record(
+        &mut self,
+        now: Duration,
+    ) -> Option<(SessionRecordBuilder, TrackedRecord)> {
         let seq = self.state.next_record_seq;
         let mut builder = SessionRecordBuilder::new(seq, self.config.record_max_size);
         let mut outbound = TrackedRecord {
@@ -608,7 +619,7 @@ impl<M: StreamMeta> SessionFsm<M> {
         self.state.next_stream_index = next_index;
     }
 
-    fn process_record_ack(&mut self, now: Instant, ack: &RecordAck) {
+    fn process_record_ack(&mut self, now: Duration, ack: &RecordAck) {
         let mut latest_sent_at = None;
         let state = &mut self.state;
         for (_, record) in state
@@ -621,14 +632,12 @@ impl<M: StreamMeta> SessionFsm<M> {
             }
         }
         if let Some(sent_at) = latest_sent_at {
-            state
-                .loss_recovery
-                .on_ack(now.saturating_duration_since(sent_at));
+            state.loss_recovery.on_ack(now.saturating_sub(sent_at));
         }
         self.reap_reapable_streams();
     }
 
-    fn schedule_ack(&mut self, now: Instant) {
+    fn schedule_ack(&mut self, now: Duration) {
         self.state
             .ack_tracker
             .schedule_ack(now + self.config.ack_delay);
@@ -639,7 +648,7 @@ impl<M: StreamMeta> SessionFsm<M> {
         self.state.ack_tracker.pending_ack(max_ack_wire_size)
     }
 
-    fn collect_timeouts(&mut self, now: Instant) {
+    fn collect_timeouts(&mut self, now: Duration) {
         let rto = self.state.loss_recovery.rto();
         let mut timed_out = false;
         let state = &mut self.state;
@@ -952,7 +961,7 @@ fn local_stream_was_opened(
 }
 
 fn restore_tracked_record<M>(
-    now: Instant,
+    now: Duration,
     ack_tracker: &mut AckTracker,
     pending_ping: &mut bool,
     streams: &mut IndexMap<StreamId, StreamState<M>>,

@@ -1,6 +1,6 @@
 //! outbound record tracking state for ack and retransmit handling
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use ql_common::StreamId;
 use ql_wire::{RecordAck, RecordSeq, StreamReset};
@@ -12,7 +12,7 @@ pub struct TrackedRecord {
     /// separate from `frames`, which only holds ack-eliciting ones
     pub ack: Option<RecordAck>,
     pub ping_included: bool,
-    pub sent_at: Option<Instant>,
+    pub sent_at: Option<Duration>,
 }
 
 #[derive(Debug, Clone)]

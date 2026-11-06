@@ -2,7 +2,7 @@ mod handshake;
 mod proptest;
 mod session;
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use ql_common::QID;
 use ql_wire::{
@@ -39,7 +39,7 @@ struct Node {
 }
 
 struct Harness {
-    now: Instant,
+    now: Duration,
     a: Node,
     b: Node,
 }
@@ -71,7 +71,7 @@ impl Harness {
         know_b: bool,
     ) -> Self {
         let (identity_a, identity_b) = test_identities(&SoftwareCrypto);
-        let now = Instant::now();
+        let now = Duration::from_secs(1);
 
         let mut harness = Self {
             now,
@@ -145,7 +145,7 @@ impl Harness {
         harness
     }
 
-    fn time(&self) -> Instant {
+    fn time(&self) -> Duration {
         self.now
     }
 
