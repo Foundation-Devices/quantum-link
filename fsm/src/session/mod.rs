@@ -273,6 +273,12 @@ impl<M: StreamMeta> SessionFsm<M> {
     ) where
         I: IntoIterator<Item = Result<SessionFrame<Bytes>, ql_wire::Error>>,
     {
+        // `u64::MAX` has no successor, so the replay window and ack ranges can't hold it.
+        if seq.0 == u64::MAX {
+            self.close(SessionCloseCode::PROTOCOL, sink);
+            return;
+        }
+
         self.collect_timeouts(now);
 
         self.state.replay_window.accept(seq);

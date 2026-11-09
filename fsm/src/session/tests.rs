@@ -1102,6 +1102,20 @@ fn out_of_order_remote_stream_first_observations_still_open_once_each() {
 }
 
 #[test]
+fn max_record_seq_closes_session() {
+    let now = Duration::from_secs(1);
+    let mut fsm =
+        super::SessionFsm::<()>::new(SessionConfig::default(), SessionParams::default(), now);
+
+    let events = receive_events(&mut fsm, now, RecordSeq(u64::MAX), &[SessionFrame::Ping]);
+
+    let [SessionEvent::SessionClosed { close, .. }] = events.as_slice() else {
+        panic!("expected session close event");
+    };
+    assert_eq!(close.code, ql_wire::SessionCloseCode::PROTOCOL);
+}
+
+#[test]
 fn invalid_remote_stream_reset_closes_session() {
     let now = Duration::from_secs(1);
     let mut fsm =
