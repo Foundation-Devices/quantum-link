@@ -1,3 +1,5 @@
+use zeroize::Zeroize;
+
 pub const ML_KEM_SUITE_TAG: &[u8] = b"ml-kem-1024";
 
 // ql-wire fixes the protocol to ML-KEM-1024 on the wire, but the host
@@ -34,7 +36,7 @@ impl AsRef<[u8]> for SessionKey {
 
 impl Drop for SessionKey {
     fn drop(&mut self) {
-        self.0.fill(0);
+        self.0.zeroize();
     }
 }
 
@@ -84,7 +86,7 @@ impl MlKemPrivateKey {
 
 impl Drop for MlKemPrivateKey {
     fn drop(&mut self) {
-        self.0.as_mut().fill(0);
+        self.0.as_mut().zeroize();
     }
 }
 
