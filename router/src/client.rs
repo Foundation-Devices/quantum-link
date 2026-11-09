@@ -148,6 +148,7 @@ pub async fn attach(
     identity: &QlIdentity,
     router: &PeerBundle,
 ) -> io::Result<()> {
+    router.validate(&SoftwareCrypto).map_err(invalid_data)?;
     let route = RouteHeader {
         sender: identity.qid,
         recipient: router.qid,
