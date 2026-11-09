@@ -31,15 +31,6 @@ impl PairingToken {
     }
 }
 
-impl Display for PairingToken {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for byte in self.0 {
-            write!(f, "{byte:02x}")?;
-        }
-        Ok(())
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, ql_codec::Codec)]
 #[codec(frozen)]
 #[repr(transparent)]
