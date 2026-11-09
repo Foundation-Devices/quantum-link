@@ -7,12 +7,13 @@ use crate::{
         read_eof_value,
     },
     upload::Upload,
-    write_bytes, RpcError, RpcRead, RpcStream, RpcWrite,
+    write_bytes, RpcError, RpcOptions, RpcRead, RpcStream, RpcWrite,
 };
 
 pub async fn start<M, St>(
     stream: St,
     request: &M::Request,
+    options: RpcOptions,
 ) -> Result<UploadCall<M, St::Writer, St::Reader>, St::Error>
 where
     M: Upload,
@@ -22,7 +23,7 @@ where
     let mut payload = Vec::new();
     crate::codec::encode_value_part(request, &mut payload);
     write_bytes(&mut writer, Bytes::from(payload)).await?;
-    Ok(UploadCall::new(writer, reader))
+    Ok(UploadCall::new(writer, reader, options))
 }
 
 pub struct UploadCall<M, W, R>
@@ -33,6 +34,7 @@ where
 {
     writer: W,
     reader: R,
+    options: RpcOptions,
     marker: std::marker::PhantomData<fn() -> M>,
 }
 
@@ -53,10 +55,11 @@ where
     W: RpcWrite,
     R: RpcRead<Error = W::Error>,
 {
-    pub fn new(writer: W, reader: R) -> Self {
+    pub fn new(writer: W, reader: R, options: RpcOptions) -> Self {
         Self {
             writer,
             reader,
+            options,
             marker: std::marker::PhantomData,
         }
     }
@@ -78,7 +81,7 @@ where
     pub async fn finish(mut self) -> Result<M::Response, RpcError<W::Error>> {
         drop(self.writer.finish());
 
-        read_eof_value::<M::Response, _>(&mut self.reader).await
+        read_eof_value::<M::Response, _>(&mut self.reader, self.options).await
     }
 
     fn reset(&mut self, code: ResetCode) {

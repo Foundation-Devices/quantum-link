@@ -12,12 +12,13 @@ use crate::{
         progress::codec::{ReadStep, ResponseReader},
         write_eof_value,
     },
-    Error, RpcError, RpcRead, RpcStream,
+    Error, RpcError, RpcOptions, RpcRead, RpcStream,
 };
 
 pub async fn start<M, St>(
     stream: St,
     request: &M::Request,
+    options: RpcOptions,
 ) -> Result<ProgressCall<M, St::Reader>, RpcError<St::Error>>
 where
     M: Progress,
@@ -27,7 +28,7 @@ where
     write_eof_value(writer, request)
         .await
         .map_err(RpcError::Transport)?;
-    Ok(ProgressCall::new(reader))
+    Ok(ProgressCall::new(reader, options))
 }
 
 pub struct ProgressCall<M, R>
@@ -69,10 +70,10 @@ where
     M: Progress,
     R: RpcRead,
 {
-    pub fn new(stream: R) -> Self {
+    pub fn new(stream: R, options: RpcOptions) -> Self {
         Self {
             stream,
-            state: State::Reading(ResponseReader::default()),
+            state: State::Reading(ResponseReader::new(options)),
         }
     }
 

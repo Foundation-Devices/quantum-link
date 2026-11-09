@@ -2,7 +2,7 @@ use std::future::Future;
 
 use crate::{
     request::Response, rpc::read_framed_prefix, Context, MultipartReader, RouterConfig, RpcError,
-    RpcRead, RpcStream, RpcWrite, Upload,
+    RpcOptions, RpcRead, RpcStream, RpcWrite, Upload,
 };
 
 #[trait_variant::make(UploadHandler: Send)]
@@ -50,10 +50,11 @@ where
     let (mut reader, mut writer) = stream.split();
 
     async move {
+        let options = RpcOptions {
+            max_value_bytes: config.max_request_bytes,
+        };
         let (request, buffered) =
-            match read_framed_prefix::<M::Request, _>(&mut reader, Some(config.max_request_bytes))
-                .await
-            {
+            match read_framed_prefix::<M::Request, _>(&mut reader, options).await {
                 Ok(value) => value,
                 Err(error) => {
                     let code = error.reset_code();
@@ -70,7 +71,7 @@ where
             state,
             context,
             request,
-            MultipartReader::new(reader, buffered),
+            MultipartReader::new(reader, buffered, options),
             Response::new(writer),
         )
         .await;

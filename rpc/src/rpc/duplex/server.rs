@@ -2,7 +2,7 @@ use std::future::Future;
 
 use crate::{
     duplex::{Duplex, DuplexReceiver, DuplexSender},
-    Context, RpcRead, RpcStream, RpcWrite,
+    Context, RouterConfig, RpcOptions, RpcRead, RpcStream, RpcWrite,
 };
 
 #[trait_variant::make(DuplexHandler: Send)]
@@ -27,7 +27,7 @@ where
 pub(crate) fn handle_duplex<S, M, St, H, HF>(
     state: S,
     context: Context,
-    _config: crate::RouterConfig,
+    config: RouterConfig,
     stream: St,
     handle: H,
 ) -> impl Future<Output = ()>
@@ -45,7 +45,12 @@ where
             context,
             DuplexPeer {
                 sender: DuplexSender::new(writer),
-                receiver: DuplexReceiver::new(reader),
+                receiver: DuplexReceiver::new(
+                    reader,
+                    RpcOptions {
+                        max_value_bytes: config.max_request_bytes,
+                    },
+                ),
             },
         )
         .await;

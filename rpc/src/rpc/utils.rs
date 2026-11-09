@@ -3,7 +3,7 @@ use ql_codec::Encode;
 
 use crate::{
     codec, read_bytes, write_bytes, ChunkQueue, DecodeOwned, Error, RouterConfig, RpcError,
-    RpcRead, RpcWrite,
+    RpcOptions, RpcRead, RpcWrite,
 };
 
 pub async fn write_eof_value<T, W>(mut writer: W, value: &T) -> Result<(), W::Error>
@@ -15,7 +15,10 @@ where
     writer.finish().await
 }
 
-pub async fn read_eof_value<T, R>(reader: &mut R) -> Result<T, RpcError<R::Error>>
+pub async fn read_eof_value<T, R>(
+    reader: &mut R,
+    options: RpcOptions,
+) -> Result<T, RpcError<R::Error>>
 where
     T: DecodeOwned,
     R: RpcRead,
@@ -27,6 +30,10 @@ where
         if chunk.is_empty() {
             break;
         }
+        if chunk.len() > options.max_value_bytes - bytes.remaining() {
+            reader.reset(ql_common::ResetCode::LIMIT);
+            return Err(Error::LengthOverflow.into());
+        }
         bytes.push(chunk);
     }
 
@@ -35,7 +42,7 @@ where
 
 pub async fn read_framed_prefix<T, R>(
     reader: &mut R,
-    max_len: Option<usize>,
+    options: RpcOptions,
 ) -> Result<(T, ChunkQueue), RpcError<R::Error>>
 where
     T: DecodeOwned,
@@ -44,6 +51,13 @@ where
     let mut bytes = ChunkQueue::default();
 
     loop {
+        if bytes
+            .next_part_len()?
+            .is_some_and(|len| len > options.max_value_bytes)
+        {
+            reader.reset(ql_common::ResetCode::LIMIT);
+            return Err(Error::LengthOverflow.into());
+        }
         let value = match bytes.try_take_part().map_err(RpcError::Protocol)? {
             Some(mut body) => Some(codec::decode_exact(&mut body)?),
             None => None,
@@ -57,11 +71,6 @@ where
             return Err(Error::Truncated.into());
         }
         bytes.push(chunk);
-        if let Some(max_len) = max_len {
-            if bytes.next_part_len()?.is_some_and(|len| len > max_len) {
-                return Err(Error::LengthOverflow.into());
-            }
-        }
     }
 }
 

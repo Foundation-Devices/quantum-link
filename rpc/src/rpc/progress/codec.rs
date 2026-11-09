@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use bytes::Bytes;
 
-use crate::{codec, progress::Progress, ChunkQueue, Error, RpcError};
+use crate::{codec, progress::Progress, ChunkQueue, Error, RpcError, RpcOptions};
 
 pub enum ReadStep<M: Progress> {
     NeedMore,
@@ -12,19 +12,19 @@ pub enum ReadStep<M: Progress> {
 
 pub struct ResponseReader<M: Progress> {
     bytes: ChunkQueue,
+    options: RpcOptions,
     marker: PhantomData<fn() -> M>,
 }
 
-impl<M: Progress> Default for ResponseReader<M> {
-    fn default() -> Self {
+impl<M: Progress> ResponseReader<M> {
+    pub fn new(options: RpcOptions) -> Self {
         Self {
             bytes: ChunkQueue::default(),
+            options,
             marker: PhantomData,
         }
     }
-}
 
-impl<M: Progress> ResponseReader<M> {
     pub fn push(&mut self, chunk: Bytes) {
         self.bytes.push(chunk);
     }
@@ -32,7 +32,7 @@ impl<M: Progress> ResponseReader<M> {
     pub fn advance<E>(&mut self) -> Result<ReadStep<M>, RpcError<E>> {
         let Some((kind, mut body)) = self
             .bytes
-            .try_take_tagged_part()
+            .try_take_tagged_part(self.options.max_value_bytes)
             .map_err(RpcError::Protocol)?
         else {
             return Ok(ReadStep::NeedMore);

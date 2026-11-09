@@ -7,10 +7,11 @@ use std::{
 };
 
 use bytes::Bytes;
+use ql_codec::Encode;
 use ql_common::{ResetCode, StreamId, QID};
 
 use super::{download, duplex, notification, progress, request, subscription, upload};
-use crate::{Context, Route, RouterConfig, RpcRead, RpcRouteKey, RpcStream, RpcWrite};
+use crate::{Context, Route, RouterConfig, RpcOptions, RpcRead, RpcRouteKey, RpcStream, RpcWrite};
 
 const CONTEXT: Context = Context {
     qid: QID([0; QID::SIZE]),
@@ -292,7 +293,7 @@ fn request() {
     for chunk_size in chunk_sizes() {
         let (client, server) = stream_pair(chunk_size);
         let message = b"hello".to_vec();
-        let client = request::call::<Rpc, _>(client, &message);
+        let client = request::call::<Rpc, _>(client, &message, RpcOptions::default());
         let server = request::handle_request::<(), Vec<u8>, Vec<u8>, _, _, _, _>(
             (),
             CONTEXT,
@@ -307,6 +308,50 @@ fn request() {
         let (response, ()) = run(client, server);
         assert_eq!(response.unwrap(), b"world".to_vec());
     }
+}
+
+#[test]
+fn eof_value_limit_counts_all_chunks() {
+    let (mut client, _server) = stream_pair(1);
+    let encoded = Bytes::from(b"hello".to_vec().encode_vec());
+    let options = RpcOptions {
+        max_value_bytes: encoded.len() - 1,
+    };
+    client
+        .reader
+        .pipe
+        .borrow_mut()
+        .chunks
+        .extend([encoded.slice(..3), encoded.slice(3..)]);
+
+    let (result, ()) = run(
+        super::read_eof_value::<Vec<u8>, _>(&mut client.reader, options),
+        ready(()),
+    );
+    assert_eq!(result.unwrap_err().reset_code(), Some(ResetCode::LIMIT));
+    assert_eq!(client.reader.pipe.borrow().reset, Some(ResetCode::LIMIT));
+}
+
+#[test]
+fn framed_value_limit_rejects_prefix_without_body() {
+    let (mut client, _server) = stream_pair(1);
+    let prefix = Bytes::copy_from_slice(&17u64.to_le_bytes());
+    let options = RpcOptions {
+        max_value_bytes: 16,
+    };
+    client
+        .reader
+        .pipe
+        .borrow_mut()
+        .chunks
+        .extend([prefix.slice(..4), prefix.slice(4..)]);
+
+    let (result, ()) = run(
+        super::read_framed_prefix::<u8, _>(&mut client.reader, options),
+        ready(()),
+    );
+    assert_eq!(result.unwrap_err().reset_code(), Some(ResetCode::LIMIT));
+    assert_eq!(client.reader.pipe.borrow().reset, Some(ResetCode::LIMIT));
 }
 
 #[test]
@@ -350,9 +395,15 @@ fn subscription() {
     for chunk_size in chunk_sizes() {
         let (client, server) = stream_pair(chunk_size);
         let client = async move {
-            let mut subscription = subscription::start::<Rpc, _>(client, &b"watch".to_vec())
-                .await
-                .unwrap();
+            let mut subscription = subscription::start::<Rpc, _>(
+                client,
+                &b"watch".to_vec(),
+                RpcOptions {
+                    max_value_bytes: b"one".as_slice().encoded_len(),
+                },
+            )
+            .await
+            .unwrap();
             assert_eq!(
                 subscription.next_event().await.unwrap().unwrap(),
                 b"one".to_vec()
@@ -394,9 +445,15 @@ fn progress() {
     for chunk_size in chunk_sizes() {
         let (client, server) = stream_pair(chunk_size);
         let client = async move {
-            let mut progress = progress::start::<Rpc, _>(client, &b"start".to_vec())
-                .await
-                .unwrap();
+            let mut progress = progress::start::<Rpc, _>(
+                client,
+                &b"start".to_vec(),
+                RpcOptions {
+                    max_value_bytes: b"done".as_slice().encoded_len(),
+                },
+            )
+            .await
+            .unwrap();
             assert_eq!(progress.next_progress().await, Some(b"one".to_vec()));
             assert_eq!(progress.next_progress().await, Some(b"two".to_vec()));
             assert_eq!(progress.next_progress().await, None);
@@ -434,9 +491,15 @@ fn download() {
         let (client, server) = stream_pair(chunk_size);
         let client = async move {
             let pipe = client.reader.pipe.clone();
-            let download = download::start::<Rpc, _>(client, &b"file".to_vec())
-                .await
-                .unwrap();
+            let download = download::start::<Rpc, _>(
+                client,
+                &b"file".to_vec(),
+                RpcOptions {
+                    max_value_bytes: b"metadata".as_slice().encoded_len(),
+                },
+            )
+            .await
+            .unwrap();
             let (header, mut reader) = download.start().await.unwrap();
             assert_eq!(header, b"metadata".to_vec());
             let (header, mut part) = reader.next_part().await.unwrap().unwrap();
@@ -488,9 +551,10 @@ fn upload() {
     for chunk_size in chunk_sizes() {
         let (client, server) = stream_pair(chunk_size);
         let client = async move {
-            let mut upload = upload::start::<Rpc, _>(client, &b"file".to_vec())
-                .await
-                .unwrap();
+            let mut upload =
+                upload::start::<Rpc, _>(client, &b"file".to_vec(), RpcOptions::default())
+                    .await
+                    .unwrap();
             let mut part = upload.start_part(b"part".to_vec()).await.unwrap();
             part.send(Bytes::from_static(b"abc")).await.unwrap();
             part.send(Bytes::from_static(b"def")).await.unwrap();
@@ -540,7 +604,7 @@ fn duplex() {
     for chunk_size in chunk_sizes() {
         let (client, server) = stream_pair(chunk_size);
         let client = async move {
-            let call = duplex::start::<Rpc, _>(client);
+            let call = duplex::start::<Rpc, _>(client, RpcOptions::default());
             let mut sender = call.sender;
             let mut receiver = call.receiver;
             sender.send(&b"ping".to_vec()).await.unwrap();

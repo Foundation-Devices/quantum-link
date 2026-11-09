@@ -1,7 +1,8 @@
 mod adapter;
 
 use ql_rpc::{
-    download, duplex, notification, progress, request, subscription, upload, Route, RpcRouteKey,
+    download, duplex, notification, progress, request, subscription, upload, Route, RpcOptions,
+    RpcRouteKey,
 };
 
 use crate::{QlStream, QlStreamError, RuntimeHandle, StreamOptions, StreamReader, StreamWriter};
@@ -11,9 +12,15 @@ type RpcResult<T> = Result<T, ql_rpc::RpcError<QlStreamError>>;
 #[derive(Clone)]
 pub struct RpcHandle {
     inner: RuntimeHandle,
+    rpc_options: RpcOptions,
 }
 
 impl RpcHandle {
+    pub fn options(mut self, options: RpcOptions) -> Self {
+        self.rpc_options = options;
+        self
+    }
+
     pub async fn notification<M>(&self, event: &M::Payload, options: StreamOptions) -> RpcResult<()>
     where
         M: notification::Notification,
@@ -33,7 +40,7 @@ impl RpcHandle {
         M: request::Request,
     {
         let stream = self.open_rpc_stream::<M>(options).await?;
-        request::call::<M, _>(stream, request).await
+        request::call::<M, _>(stream, request, self.rpc_options).await
     }
 
     pub async fn subscribe<M>(
@@ -45,7 +52,7 @@ impl RpcHandle {
         M: subscription::Subscription,
     {
         let stream = self.open_rpc_stream::<M>(options).await?;
-        subscription::start::<M, _>(stream, request).await
+        subscription::start::<M, _>(stream, request, self.rpc_options).await
     }
 
     pub async fn download<M>(
@@ -57,7 +64,7 @@ impl RpcHandle {
         M: download::Download,
     {
         let stream = self.open_rpc_stream::<M>(options).await?;
-        download::start::<M, _>(stream, request).await
+        download::start::<M, _>(stream, request, self.rpc_options).await
     }
 
     pub async fn progress<M>(
@@ -69,7 +76,7 @@ impl RpcHandle {
         M: progress::Progress,
     {
         let stream = self.open_rpc_stream::<M>(options).await?;
-        progress::start::<M, _>(stream, request).await
+        progress::start::<M, _>(stream, request, self.rpc_options).await
     }
 
     pub async fn upload<M>(
@@ -81,7 +88,7 @@ impl RpcHandle {
         M: upload::Upload,
     {
         let stream = self.open_rpc_stream::<M>(options).await?;
-        upload::start::<M, _>(stream, request)
+        upload::start::<M, _>(stream, request, self.rpc_options)
             .await
             .map_err(ql_rpc::RpcError::Transport)
     }
@@ -94,13 +101,16 @@ impl RpcHandle {
         M: duplex::Duplex,
     {
         let stream = self.open_rpc_stream::<M>(options).await?;
-        Ok(duplex::start::<M, _>(stream))
+        Ok(duplex::start::<M, _>(stream, self.rpc_options))
     }
 }
 
 impl RpcHandle {
     pub(super) fn new(inner: RuntimeHandle) -> Self {
-        Self { inner }
+        Self {
+            inner,
+            rpc_options: RpcOptions::default(),
+        }
     }
 
     async fn open_rpc_stream<R>(&self, options: StreamOptions) -> RpcResult<QlStream>

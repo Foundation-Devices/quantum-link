@@ -9,11 +9,11 @@ use ql_codec::Encode;
 use ql_common::ResetCode;
 
 use crate::{
-    codec, duplex::Duplex, write_bytes, ChunkQueue, DecodeOwned, Error, RpcError, RpcRead,
-    RpcStream, RpcWrite,
+    codec, duplex::Duplex, write_bytes, ChunkQueue, DecodeOwned, Error, RpcError, RpcOptions,
+    RpcRead, RpcStream, RpcWrite,
 };
 
-pub fn start<M, St>(stream: St) -> DuplexCall<M, St::Writer, St::Reader>
+pub fn start<M, St>(stream: St, options: RpcOptions) -> DuplexCall<M, St::Writer, St::Reader>
 where
     M: Duplex,
     St: RpcStream,
@@ -21,7 +21,7 @@ where
     let (reader, writer) = stream.split();
     DuplexCall {
         sender: DuplexSender::new(writer),
-        receiver: DuplexReceiver::new(reader),
+        receiver: DuplexReceiver::new(reader, options),
     }
 }
 
@@ -87,10 +87,14 @@ where
     T: DecodeOwned,
     R: RpcRead,
 {
-    pub fn new(stream: R) -> Self {
+    pub fn new(stream: R, options: RpcOptions) -> Self {
         Self {
             stream,
-            reader: EventReader::default(),
+            reader: EventReader {
+                bytes: ChunkQueue::default(),
+                options,
+                marker: PhantomData,
+            },
             finished: false,
         }
     }
@@ -157,16 +161,8 @@ enum ReadStep<T> {
 
 struct EventReader<T> {
     bytes: ChunkQueue,
+    options: RpcOptions,
     marker: PhantomData<fn() -> T>,
-}
-
-impl<T> Default for EventReader<T> {
-    fn default() -> Self {
-        Self {
-            bytes: ChunkQueue::default(),
-            marker: PhantomData,
-        }
-    }
 }
 
 impl<T: DecodeOwned> EventReader<T> {
@@ -175,6 +171,13 @@ impl<T: DecodeOwned> EventReader<T> {
     }
 
     fn advance<E>(&mut self) -> Result<ReadStep<T>, RpcError<E>> {
+        if self
+            .bytes
+            .next_part_len()?
+            .is_some_and(|len| len > self.options.max_value_bytes)
+        {
+            return Err(Error::LengthOverflow.into());
+        }
         let Some(mut body) = self.bytes.try_take_part().map_err(RpcError::Protocol)? else {
             return Ok(ReadStep::NeedMore);
         };

@@ -4,7 +4,7 @@ use bytes::{BufMut, Bytes};
 use ql_codec::Encode;
 use ql_common::ResetCode;
 
-use crate::{codec, read_bytes, ChunkQueue, DecodeOwned, RpcError, RpcRead};
+use crate::{codec, read_bytes, ChunkQueue, DecodeOwned, RpcError, RpcOptions, RpcRead};
 
 /// reads a stream of framed byte parts
 ///
@@ -36,10 +36,10 @@ where
     H: DecodeOwned,
     R: RpcRead,
 {
-    pub fn new(stream: R, buffered: ChunkQueue) -> Self {
+    pub fn new(stream: R, buffered: ChunkQueue, options: RpcOptions) -> Self {
         Self {
             stream,
-            frames: PartFrameReader::new(buffered),
+            frames: PartFrameReader::new(buffered, options),
             finished: false,
         }
     }
@@ -176,6 +176,7 @@ pub enum PartFrame<H: DecodeOwned> {
 
 pub struct PartFrameReader<H: DecodeOwned> {
     bytes: ChunkQueue,
+    options: RpcOptions,
     pending_frame: PendingFrame,
     marker: PhantomData<fn() -> H>,
 }
@@ -188,9 +189,10 @@ enum PendingFrame {
 }
 
 impl<H: DecodeOwned> PartFrameReader<H> {
-    pub fn new(bytes: ChunkQueue) -> Self {
+    pub fn new(bytes: ChunkQueue, options: RpcOptions) -> Self {
         Self {
             bytes,
+            options,
             pending_frame: PendingFrame::None,
             marker: PhantomData,
         }
@@ -250,6 +252,9 @@ impl<H: DecodeOwned> PartFrameReader<H> {
 
                     let kind = FrameKind::try_from(kind).map_err(RpcError::Protocol)?;
                     match kind {
+                        FrameKind::PartHeader if len > self.options.max_value_bytes => {
+                            return Err(crate::Error::LengthOverflow.into());
+                        }
                         FrameKind::BodyChunk => {
                             self.pending_frame = PendingFrame::Body { remaining: len };
                         }
@@ -324,6 +329,7 @@ mod tests {
     use super::{
         encode_body_chunk, encode_end_part, encode_part_header, PartFrame, PartFrameReader,
     };
+    use crate::RpcOptions;
 
     #[test]
     fn part_reader_emits_multipart_sequence() {
@@ -335,7 +341,7 @@ mod tests {
         encode_part_header(&b"b.txt".to_vec(), &mut encoded);
         encode_end_part(&mut encoded);
 
-        let mut reader = PartFrameReader::<Vec<u8>>::new(Default::default());
+        let mut reader = PartFrameReader::<Vec<u8>>::new(Default::default(), RpcOptions::default());
         reader.push(Bytes::from(encoded));
 
         match reader.advance::<std::convert::Infallible>().unwrap() {
@@ -381,7 +387,7 @@ mod tests {
         encode_part_header(&b"a.txt".to_vec(), &mut encoded);
         let encoded = Bytes::from(encoded);
 
-        let mut reader = PartFrameReader::<Vec<u8>>::new(Default::default());
+        let mut reader = PartFrameReader::<Vec<u8>>::new(Default::default(), RpcOptions::default());
         reader.push(encoded.slice(..4));
         assert!(reader
             .advance::<std::convert::Infallible>()
@@ -403,7 +409,8 @@ mod tests {
         encode_body_chunk(&Bytes::from_static(b"hello"), &mut encoded);
         let encoded = Bytes::from(encoded);
 
-        let mut reader = PartFrameReader::<Vec<u8>>::new(Default::default());
+        let mut reader =
+            PartFrameReader::<Vec<u8>>::new(Default::default(), RpcOptions { max_value_bytes: 1 });
         reader.push(encoded.slice(..9));
         assert!(reader
             .advance::<std::convert::Infallible>()
@@ -429,7 +436,7 @@ mod tests {
         encode_end_part(&mut encoded);
         encoded[1..9].copy_from_slice(&1u64.to_le_bytes());
 
-        let mut reader = PartFrameReader::<Vec<u8>>::new(Default::default());
+        let mut reader = PartFrameReader::<Vec<u8>>::new(Default::default(), RpcOptions::default());
         reader.push(Bytes::from(encoded));
 
         assert!(matches!(

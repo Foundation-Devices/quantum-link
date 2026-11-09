@@ -61,14 +61,23 @@ impl ChunkQueue {
         Ok(Some(DrainBuf::new(self, len)))
     }
 
-    pub fn try_take_tagged_part(&mut self) -> Result<Option<(u8, DrainBuf<'_>)>, Error> {
+    pub fn try_take_tagged_part(
+        &mut self,
+        max_len: usize,
+    ) -> Result<Option<(u8, DrainBuf<'_>)>, Error> {
         let mut bytes = self.peek();
         let Ok(kind) = bytes.try_get_u8() else {
             return Ok(None);
         };
-        let Some(len) = read_next_part_len(&mut bytes)? else {
+        let Some(len) = read_part_len_header(&mut bytes)? else {
             return Ok(None);
         };
+        if len > max_len {
+            return Err(Error::LengthOverflow);
+        }
+        if bytes.remaining() < len {
+            return Ok(None);
+        }
 
         self.advance(1 + LENGTH_SIZE);
         Ok(Some((kind, DrainBuf::new(self, len))))
