@@ -4,8 +4,17 @@ use crate::{Empty, Error};
 
 // COMMON TYPES
 
-rpc! {
-    pub struct Shard(pub Vec<u8>);
+// A share of the seed, so it is written out by hand to keep its bytes out of `Debug`.
+#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "frb", flutter_rust_bridge::frb(non_opaque))]
+pub struct Shard(pub Vec<u8>);
+
+impl_codec!(Shard);
+
+impl core::fmt::Debug for Shard {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "Shard({} bytes)", self.0.len())
+    }
 }
 
 rpc! {
