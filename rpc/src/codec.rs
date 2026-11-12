@@ -1,103 +1,102 @@
-use std::{convert::Infallible, str::Utf8Error};
-
-use bytes::{Buf, BufMut, Bytes};
+use bytes::{Buf, BufMut};
+use ql_codec::{Decode, Encode, Reader, Writer};
 
 use crate::{Error, RpcError};
 
-pub trait RpcCodec: Sized {
-    type Error;
+/// encoding and decoding owned rpc payloads
+pub trait Codec: Encode + DecodeOwned {}
 
-    fn encode_value<B: BufMut + ?Sized>(&self, out: &mut B);
-    fn decode_value<B: Buf>(bytes: &mut B) -> Result<Self, Self::Error>;
+impl<T: Encode + DecodeOwned> Codec for T {}
+
+/// decoding an owned rpc payload from any shared byte slice
+pub trait DecodeOwned: for<'a> Decode<&'a [u8]> {}
+
+impl<T: for<'a> Decode<&'a [u8]>> DecodeOwned for T {}
+
+pub fn encode_value_part<T: Encode>(value: &T, out: &mut Vec<u8>) {
+    let len = u64::try_from(value.encoded_len()).expect("rpc payload exceeds u64 length framing");
+    out.put_u64_le(len);
+    value.encode(&mut Writer::new(out));
 }
 
-impl RpcCodec for String {
-    type Error = Utf8Error;
-
-    fn encode_value<B: BufMut + ?Sized>(&self, out: &mut B) {
-        out.put_slice(self.as_bytes());
-    }
-
-    fn decode_value<B: Buf>(bytes: &mut B) -> Result<Self, Self::Error> {
-        let len = bytes.remaining();
-        if bytes.chunk().len() == len {
-            let s = std::str::from_utf8(bytes.chunk())?.to_owned();
-            bytes.advance(len);
-            Ok(s)
-        } else {
-            let mut buf = vec![0; len];
-            bytes.copy_to_slice(&mut buf);
-            String::from_utf8(buf).map_err(|err| err.utf8_error())
-        }
-    }
-}
-
-impl RpcCodec for Vec<u8> {
-    type Error = Infallible;
-
-    fn encode_value<B: BufMut + ?Sized>(&self, out: &mut B) {
-        out.put_slice(self.as_slice());
-    }
-
-    fn decode_value<B: Buf>(bytes: &mut B) -> Result<Self, Self::Error> {
-        let len = bytes.remaining();
-        let mut buf = vec![0; len];
-        bytes.copy_to_slice(&mut buf);
-        Ok(buf)
-    }
-}
-
-impl RpcCodec for Bytes {
-    type Error = Infallible;
-
-    fn encode_value<B: BufMut + ?Sized>(&self, out: &mut B) {
-        out.put_slice(self.as_ref());
-    }
-
-    fn decode_value<B: Buf>(bytes: &mut B) -> Result<Self, Self::Error> {
-        Ok(bytes.copy_to_bytes(bytes.remaining()))
-    }
-}
-
-const LENGTH_SIZE: usize = 8;
-
-pub fn encode_value_part<T: RpcCodec, B: BufMut + AsMut<[u8]>>(value: &T, out: &mut B) {
-    let payload_start = reserve_length(out);
-    value.encode_value(out);
-    backpatch_length(out, payload_start);
-}
-
-pub fn encode_tagged_value_part<T: RpcCodec, B: BufMut + AsMut<[u8]>>(
-    tag: u8,
-    value: &T,
-    out: &mut B,
-) {
+pub fn encode_tagged_value_part<T: Encode>(tag: u8, value: &T, out: &mut Vec<u8>) {
     out.put_u8(tag);
     encode_value_part(value, out);
 }
 
-/// reserves the encoded length field
-pub fn reserve_length<B: BufMut + AsMut<[u8]>>(out: &mut B) -> usize {
-    let start = out.as_mut().len();
-    out.put_bytes(0, LENGTH_SIZE);
-    start
-}
-
-pub fn decode_exact<T, E>(bytes: &mut impl Buf) -> Result<T, RpcError<T::Error, E>>
+pub fn decode_exact<T, E>(bytes: &mut impl Buf) -> Result<T, RpcError<E>>
 where
-    T: RpcCodec,
+    T: DecodeOwned,
 {
-    let value = T::decode_value(bytes).map_err(RpcError::Codec)?;
-    if bytes.has_remaining() {
+    let len = bytes.remaining();
+    let contiguous;
+    let input = if bytes.chunk().len() == len {
+        bytes.chunk()
+    } else {
+        contiguous = bytes.copy_to_bytes(len);
+        contiguous.as_ref()
+    };
+    let mut reader = Reader::new(input);
+    let value = T::decode(&mut reader).map_err(RpcError::Codec)?;
+    if !reader.is_empty() {
         return Err(Error::TrailingBytes.into());
     }
+    bytes.advance(bytes.remaining());
     Ok(value)
 }
 
-pub fn backpatch_length<B: AsMut<[u8]> + ?Sized>(out: &mut B, start: usize) {
-    let out = out.as_mut();
-    let payload_start = start + LENGTH_SIZE;
-    let payload_len = out.len() - payload_start;
-    let payload_len = u64::try_from(payload_len).expect("rpc payload exceeds u64 length framing");
-    out[start..payload_start].copy_from_slice(&payload_len.to_le_bytes());
+#[cfg(test)]
+mod tests {
+    use bytes::Buf;
+    use ql_codec::{Codec, Encode};
+
+    use super::{decode_exact, encode_tagged_value_part};
+    use crate::{Error, RpcError};
+
+    #[test]
+    fn typed_frames_preserve_payload_alignment_and_decode_across_chunks() {
+        #[derive(Debug, PartialEq, Codec)]
+        struct Payload {
+            name: String,
+            values: Vec<u64>,
+        }
+
+        let value = Payload {
+            name: "hi".into(),
+            values: vec![1, 42],
+        };
+        let payload = value.encode_vec();
+        let mut frame = Vec::new();
+        encode_tagged_value_part(1, &value, &mut frame);
+        assert_eq!(frame[0], 1);
+        assert_eq!(&frame[1..9], &(payload.len() as u64).to_le_bytes());
+        assert_eq!(&frame[9..], payload);
+
+        for split in 0..=payload.len() {
+            let mut bytes = payload[..split].chain(&payload[split..]);
+            assert_eq!(decode_exact::<Payload, ()>(&mut bytes).unwrap(), value);
+            assert!(!bytes.has_remaining());
+        }
+    }
+
+    #[test]
+    fn malformed_payloads_and_trailing_bytes_are_rejected_across_chunks() {
+        for (payload, expected) in [
+            (
+                &[3, b'h', b'i'][..],
+                RpcError::Codec(ql_codec::Error::UnexpectedEof),
+            ),
+            (&[1, 255][..], RpcError::Codec(ql_codec::Error::InvalidUtf8)),
+            (
+                &[2, b'h', b'i', 0][..],
+                RpcError::Protocol(Error::TrailingBytes),
+            ),
+        ] {
+            for split in 0..=payload.len() {
+                let mut bytes = payload[..split].chain(&payload[split..]);
+                let error = decode_exact::<String, ()>(&mut bytes).unwrap_err();
+                assert_eq!(error, expected);
+            }
+        }
+    }
 }

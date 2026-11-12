@@ -47,13 +47,7 @@ fn derive_codec(item: syn::DeriveInput) -> Result<TokenStream, syn::Error> {
             ))
         }
     };
-    Ok(expand(
-        &item,
-        &ref_generics,
-        &options.derives,
-        &input,
-        expansion,
-    ))
+    Ok(expand(&item, &ref_generics, &options, &input, expansion))
 }
 
 #[derive(Default)]
@@ -123,25 +117,32 @@ impl Form {
 fn expand(
     item: &syn::DeriveInput,
     ref_generics: &syn::Generics,
-    derives: &[syn::Path],
+    options: &Options,
     input: &syn::Ident,
     expansion: Expansion,
 ) -> TokenStream {
     let Expansion {
         ref_declaration,
-        decode_ref,
+        mut decode_ref,
         from_ref,
-        decode,
+        mut decode,
         missing,
         missing_owned,
-        encoded_len,
-        encode,
+        mut encoded_len,
+        mut encode,
         discriminants,
     } = expansion;
     let ident = &item.ident;
     let ref_ident = ref_ident(ident);
     let (_, ty_generics, _) = item.generics.split_for_impl();
     let (ref_impl_generics, ref_ty_generics, ref_bounds) = ref_generics.split_for_impl();
+
+    if !options.frozen {
+        encode = quote!(::ql_codec::encode_len_prefix({ #encoded_len }, out); #encode);
+        encoded_len = quote!(::ql_codec::encoded_len_prefixed({ #encoded_len }));
+        decode = quote!(let reader = &mut reader.take_len_prefixed_reader()?; #decode);
+        decode_ref = quote!(let reader = &mut reader.take_len_prefixed_reader()?; #decode_ref);
+    }
 
     let encode_impl = |generics: syn::Generics, ty: TokenStream| {
         let (impl_generics, _, where_clause) = generics.split_for_impl();
@@ -173,6 +174,7 @@ fn expand(
     let (ref_items, ref_type) = match ref_declaration {
         Some(ref_declaration) => {
             let doc = format!("[`{ident}`] with fields borrowed from its input container");
+            let derives = &options.derives;
             let derives = (!derives.is_empty()).then(|| quote!(#[derive(#(#derives),*)]));
             let ref_encode = encode_impl(
                 with_field_bounds(
@@ -263,10 +265,9 @@ fn derive_struct(
     let ref_ident = ref_ident(&item.ident);
 
     let pattern = fields.pattern();
-    let decode_prelude = decode_prelude(fields.frozen);
     let decode = |form: Form| {
         let value = fields.decode(&form.path(), form);
-        quote!(#decode_prelude ::core::result::Result::Ok(#value))
+        quote!(::core::result::Result::Ok(#value))
     };
     let encoded_len = fields.encoded_len();
     let encode = fields.encode();
@@ -305,6 +306,7 @@ fn derive_enum(
     let ref_ident = ref_ident(&item.ident);
 
     let mut unknown = None;
+    let mut default = None;
     let mut next_enumerator = Some(0u32);
     let mut borrows = false;
     let mut ref_variants = TokenStream::new();
@@ -323,26 +325,30 @@ fn derive_enum(
         };
         next_enumerator = enumerator.checked_add(1);
 
-        if has_flag(&variant.attrs, "unknown")? {
-            if frozen {
-                return Err(syn::Error::new_spanned(
-                    variant,
-                    "A frozen enum has no unknown variant",
-                ));
-            }
-            if !matches!(variant.fields, syn::Fields::Unit) {
-                return Err(syn::Error::new_spanned(
-                    variant,
-                    "The unknown variant must be a unit variant",
-                ));
-            }
-            if unknown.is_some() {
-                return Err(syn::Error::new_spanned(
-                    variant,
-                    "Only one variant can be unknown",
-                ));
-            }
-            unknown = Some(&variant.ident);
+        for attr in variant
+            .attrs
+            .iter()
+            .filter(|attr| attr.path().is_ident("codec"))
+        {
+            attr.parse_nested_meta(|meta| {
+                let (target, name) = if meta.path.is_ident("unknown") {
+                    (&mut unknown, "unknown")
+                } else if meta.path.is_ident("default") {
+                    (&mut default, "default")
+                } else {
+                    return Err(meta.error("Expected `unknown` or `default`"));
+                };
+                if frozen {
+                    return Err(meta.error(format!("A frozen enum has no {name} variant")));
+                }
+                if !matches!(variant.fields, syn::Fields::Unit) {
+                    return Err(meta.error(format!("The {name} variant must be a unit variant")));
+                }
+                if target.replace(&variant.ident).is_some() {
+                    return Err(meta.error(format!("Only one variant can be {name}")));
+                }
+                Ok(())
+            })?;
         }
 
         let ident = &variant.ident;
@@ -379,9 +385,16 @@ fn derive_enum(
         quote!(self)
     };
 
-    let decode_prelude = decode_prelude(frozen);
+    let default = default.or(unknown);
     let decode = |form: Form, arms: TokenStream| {
         let path = form.path();
+        let empty = default.map(|default| {
+            quote!(
+                if reader.is_empty() {
+                    return ::core::result::Result::Ok(#path::#default {});
+                }
+            )
+        });
         let unknown_arm = match unknown {
             Some(unknown) => quote!(_ => #path::#unknown {},),
             None => quote!(
@@ -389,8 +402,8 @@ fn derive_enum(
             ),
         };
         quote!(
+            #empty
             let enumerator = reader.decode_varint::<u32>()?;
-            #decode_prelude
             ::core::result::Result::Ok(match enumerator {
                 #arms
                 #unknown_arm
@@ -425,12 +438,12 @@ fn derive_enum(
         decode_ref: decode(Form::Borrowed, decode_ref_arms),
         from_ref: quote!(match value { #from_ref_arms }),
         decode: decode(Form::Owned, decode_arms),
-        missing: match unknown {
-            Some(unknown) => quote!(::core::option::Option::Some(Self::Ref::#unknown {})),
+        missing: match default {
+            Some(default) => quote!(::core::option::Option::Some(Self::Ref::#default {})),
             None => quote!(::core::option::Option::None),
         },
-        missing_owned: match unknown {
-            Some(unknown) => quote!(::core::option::Option::Some(Self::#unknown {})),
+        missing_owned: match default {
+            Some(default) => quote!(::core::option::Option::Some(Self::#default {})),
             None => quote!(::core::option::Option::None),
         },
         encoded_len: quote!(match #scrutinee { #encoded_len_arms }),
@@ -475,29 +488,6 @@ impl<'a> Fields<'a> {
 
     /// length of the fields bound by [`Self::pattern`]
     fn encoded_len(&self) -> TokenStream {
-        let fields_len = self.fields_len();
-        if self.frozen {
-            fields_len
-        } else {
-            quote!(::ql_codec::encoded_len_prefixed(#fields_len))
-        }
-    }
-
-    /// encodes the fields bound by [`Self::pattern`] into `out`
-    fn encode(&self) -> TokenStream {
-        let fields = self.shape.iter().enumerate().map(|(index, field)| {
-            let binding = format_ident!("field_{index}");
-            let cfg = cfg_attrs(&field.attrs);
-            quote!(#(#cfg)* ::ql_codec::Encode::encode(#binding, out);)
-        });
-        let len = (!self.frozen).then(|| {
-            let fields_len = self.fields_len();
-            quote!(::ql_codec::encode_len_prefix(#fields_len, out);)
-        });
-        quote!(#len #(#fields)*)
-    }
-
-    fn fields_len(&self) -> TokenStream {
         let fields = self.shape.iter().enumerate().map(|(index, field)| {
             let binding = format_ident!("field_{index}");
             let cfg = cfg_attrs(&field.attrs);
@@ -511,6 +501,16 @@ impl<'a> Fields<'a> {
         })
     }
 
+    /// encodes the fields bound by [`Self::pattern`] into `out`
+    fn encode(&self) -> TokenStream {
+        let fields = self.shape.iter().enumerate().map(|(index, field)| {
+            let binding = format_ident!("field_{index}");
+            let cfg = cfg_attrs(&field.attrs);
+            quote!(#(#cfg)* ::ql_codec::Encode::encode(#binding, out);)
+        });
+        quote!(#(#fields)*)
+    }
+
     fn decode(&self, path: &TokenStream, form: Form) -> TokenStream {
         let input = self.input;
         self.construct(path, |field, _| {
@@ -520,9 +520,9 @@ impl<'a> Fields<'a> {
                 (true, Form::Borrowed) => {
                     quote!(<#ty as ::ql_codec::Decode<#input>>::decode_ref(reader)?)
                 }
-                (false, Form::Owned) => quote!(::ql_codec::decode_field::<#ty, _>(&mut fields)?),
+                (false, Form::Owned) => quote!(::ql_codec::decode_field::<#ty, _>(reader)?),
                 (false, Form::Borrowed) => {
-                    quote!(::ql_codec::decode_field_ref::<#ty, _>(&mut fields)?)
+                    quote!(::ql_codec::decode_field_ref::<#ty, _>(reader)?)
                 }
             }
         })
@@ -584,33 +584,6 @@ impl<'a> Fields<'a> {
             syn::Fields::Unit => quote!(),
         }
     }
-}
-
-/// Takes the length-prefixed fields out of `reader` as `fields`, for [`Fields::decode`]
-fn decode_prelude(frozen: bool) -> TokenStream {
-    if frozen {
-        return quote!();
-    }
-    quote!(
-        // Unused without fields, but the body still has to be skipped.
-        #[allow(unused_mut, unused_variables)]
-        let mut fields = reader.take_len_prefixed_reader()?;
-    )
-}
-
-/// Whether `attrs` hold `#[codec(name)]`, the only codec attribute allowed there
-fn has_flag(attrs: &[syn::Attribute], name: &str) -> Result<bool, syn::Error> {
-    let mut found = false;
-    for attr in attrs.iter().filter(|attr| attr.path().is_ident("codec")) {
-        attr.parse_nested_meta(|meta| {
-            if !meta.path.is_ident(name) {
-                return Err(meta.error(format!("Expected `{name}`")));
-            }
-            found = true;
-            Ok(())
-        })?;
-    }
-    Ok(found)
 }
 
 fn parse_enumerator(discriminant: &syn::Expr) -> Result<u32, syn::Error> {

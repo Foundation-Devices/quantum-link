@@ -12,13 +12,14 @@ use crate::{
         progress::codec::{ReadStep, ResponseReader},
         write_eof_value,
     },
-    Error, RpcError, RpcRead, RpcStream,
+    Error, RpcError, RpcOptions, RpcRead, RpcStream,
 };
 
 pub async fn start<M, St>(
     stream: St,
     request: &M::Request,
-) -> Result<ProgressCall<M, St::Reader>, RpcError<M::Error, St::Error>>
+    options: RpcOptions,
+) -> Result<ProgressCall<M, St::Reader>, RpcError<St::Error>>
 where
     M: Progress,
     St: RpcStream,
@@ -27,7 +28,7 @@ where
     write_eof_value(writer, request)
         .await
         .map_err(RpcError::Transport)?;
-    Ok(ProgressCall::new(reader))
+    Ok(ProgressCall::new(reader, options))
 }
 
 pub struct ProgressCall<M, R>
@@ -45,7 +46,7 @@ where
 {
     Reading(ResponseReader<M>),
     AwaitingEof(M::Response),
-    Terminal(Result<M::Response, RpcError<M::Error, T>>),
+    Terminal(Result<M::Response, RpcError<T>>),
     Done,
 }
 
@@ -53,7 +54,7 @@ enum PollStep<M, T>
 where
     M: Progress,
 {
-    Terminal(Result<M::Response, RpcError<M::Error, T>>),
+    Terminal(Result<M::Response, RpcError<T>>),
     Progress(M::Progress),
 }
 
@@ -69,10 +70,10 @@ where
     M: Progress,
     R: RpcRead,
 {
-    pub fn new(stream: R) -> Self {
+    pub fn new(stream: R, options: RpcOptions) -> Self {
         Self {
             stream,
-            state: State::Reading(ResponseReader::default()),
+            state: State::Reading(ResponseReader::new(options)),
         }
     }
 
@@ -157,7 +158,7 @@ where
     M: Progress,
     R: RpcRead,
 {
-    type Output = Result<M::Response, RpcError<M::Error, R::Error>>;
+    type Output = Result<M::Response, RpcError<R::Error>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();

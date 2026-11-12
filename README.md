@@ -25,9 +25,8 @@ Quantum Link is a networking protocol for end-to-end encrypted communication. Au
 - **ql-wire**: QuantumLink wire-format definitions
 - **ql-fsm**: QuantumLink Sans-IO protocol finite state machine
 - **ql-runtime**: QuantumLink async runtime
-- **ql-rpc**: RPC modality layer over QuantumLink streams
+- **ql-rpc**: RPC modality layer over QuantumLink streams with `ql-codec` payloads
 - **ql-router**: Router protocol and client
-- **ql-api**: Application message definitions
 - **ql-keyos**: KeyOS addressing primitives
 
 ## License

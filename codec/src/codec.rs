@@ -12,7 +12,7 @@ use crate::{
 };
 
 macro_rules! impl_codec {
-    (fixed_integer: $($ty:ty),* $(,)?) => {
+    (fixed_number: $($ty:ty),* $(,)?) => {
         $(
             impl Encode for $ty {
                 #[inline]
@@ -34,7 +34,7 @@ macro_rules! impl_codec {
 
                 #[inline]
                 fn missing() -> Option<Self> {
-                    Some(0)
+                    Some(Self::default())
                 }
             }
         )*
@@ -116,7 +116,7 @@ macro_rules! impl_codec {
     };
 }
 
-impl_codec!(fixed_integer: u8, u16, u32, u64, i8, i16, i32, i64);
+impl_codec!(fixed_number: u8, u16, u32, u64, i8, i16, i32, i64, f32, f64);
 impl_codec!(
     byte_buffer:
     Box<[u8]> => Box::from,
@@ -125,7 +125,7 @@ impl_codec!(
 impl_codec!(tuple: (T0 0, T1 1), (T0 0, T1 1, T2 2));
 // Not the fixed-width integers, so their lists can borrow as `Ref<B, [T]>`.
 impl_codec!(
-    element: usize, bool, NonZeroU8, (), Box<[u8]>, Bytes, String, Duration, SystemTime,
+    element: usize, f32, f64, bool, NonZeroU8, (), Box<[u8]>, Bytes, String, Duration, SystemTime,
 );
 
 impl<const N: usize> Encode for Box<[u8; N]> {
@@ -465,15 +465,18 @@ impl DecodeValue for bool {
 impl Encode for () {
     #[inline]
     fn encoded_len(&self) -> usize {
-        0
+        1
     }
 
-    fn encode(&self, _out: &mut Writer<impl Output>) {}
+    fn encode(&self, out: &mut Writer<impl Output>) {
+        out.put_u8(0);
+    }
 }
 
 impl DecodeValue for () {
     #[inline]
-    fn decode_value<B: ByteSlice>(_reader: &mut Reader<B>) -> Result<Self, Error> {
+    fn decode_value<B: ByteSlice>(reader: &mut Reader<B>) -> Result<Self, Error> {
+        reader.take_len_prefixed()?;
         Ok(())
     }
 

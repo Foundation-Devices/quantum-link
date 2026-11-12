@@ -7,7 +7,6 @@ members = [
   "common",
   "keyos",
   "router",
-  "api",
   "fsm",
   "rpc",
   "runtime",

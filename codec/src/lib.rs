@@ -5,14 +5,17 @@
 //! several in a row. Their `_ref` forms borrow from the encoding instead.
 //!
 //! `#[derive(Codec)]` (feature `derive`) implements both for structs and enums, generic ones
-//! included. By default their encoding is backward and forward compatible: a struct, and the
-//! fields of an enum variant, are preceded by their length. A decoder fills fields that a shorter
-//! encoding lacks with [`Decode::missing`], and skips the ones it doesn't know.
-//! `#[codec(frozen)]` drops the lengths for types that won't change. Enumerators are varints
-//! either way, so only those below 128 take a single byte. Unless frozen, an enum decodes
-//! enumerators it doesn't know to its `#[codec(unknown)]` variant, or fails without one. The
-//! derive generates `<Name>Ref<B>` as the borrowed form, which encodes the same as the owned one,
-//! and `#[codec(derive(...))]` derives traits on it for non-generic types.
+//! included. by default structs and enums start with the length of their contents. an enum's
+//! contents start with its variant number. a decoder fills fields that a shorter encoding lacks
+//! with [`Decode::missing`], and skips the ones it doesn't know. `()` uses the same empty encoding
+//! as a struct with no fields and skips any contents when decoding, so it can grow into a struct
+//! or enum. mark a unit variant with `#[codec(default)]` to decode an enum from empty contents or
+//! a missing field. without it, `#[codec(unknown)]` supplies the missing value if present.
+//! `#[codec(frozen)]` drops the lengths for types that won't change and disallows default and
+//! unknown variants. enumerators are varints either way, so only those below 128 take a single
+//! byte. an enum decodes enumerators it doesn't know to its `#[codec(unknown)]` variant, or fails
+//! without one. the derive generates `<Name>Ref<B>` as the borrowed form, which encodes the same as
+//! the owned one, and `#[codec(derive(...))]` derives traits on it for non-generic types.
 //! `#[codec(discriminants = Name)]` on an enum also generates `Name`, its variants without their
 //! fields and numbered by enumerator, and a `discriminant()` method returning it.
 //!

@@ -6,6 +6,11 @@
 
 use ql_codec::{Encode, Reader, Writer};
 
+mod macros;
+
+#[doc(hidden)]
+pub use ql_rpc as __rpc;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, ql_codec::Codec)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[codec(frozen)]
@@ -40,8 +45,7 @@ impl AppId {
     }
 }
 
-// todo: version
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, ql_codec::Codec)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PeerPermissions {
     /// KeyOS app ids this peer is allowed to open streams toward

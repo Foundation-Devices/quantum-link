@@ -1,5 +1,6 @@
 use crate::{
-    duplex::DuplexReceiver, rpc::write_eof_value, subscription::Subscription, RpcError, RpcStream,
+    duplex::DuplexReceiver, rpc::write_eof_value, subscription::Subscription, RpcError, RpcOptions,
+    RpcStream,
 };
 
 pub type SubscriptionCall<M, R> = DuplexReceiver<<M as Subscription>::Event, R>;
@@ -7,7 +8,8 @@ pub type SubscriptionCall<M, R> = DuplexReceiver<<M as Subscription>::Event, R>;
 pub async fn start<M, St>(
     stream: St,
     request: &M::Request,
-) -> Result<SubscriptionCall<M, St::Reader>, RpcError<M::Error, St::Error>>
+    options: RpcOptions,
+) -> Result<SubscriptionCall<M, St::Reader>, RpcError<St::Error>>
 where
     M: Subscription,
     St: RpcStream,
@@ -16,5 +18,5 @@ where
     write_eof_value(writer, request)
         .await
         .map_err(RpcError::Transport)?;
-    Ok(DuplexReceiver::new(reader))
+    Ok(DuplexReceiver::new(reader, options))
 }

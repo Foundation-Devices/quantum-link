@@ -17,6 +17,25 @@ mod tests;
 pub mod upload;
 mod utils;
 
+/// configures an rpc call
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RpcOptions {
+    /// maximum encoded payload size excluding the rpc frame prefix
+    ///
+    /// applies separately to replies, events, progress values and multipart headers
+    /// raw multipart body chunks are not limited
+    /// defaults to 1 MiB
+    pub max_value_bytes: usize,
+}
+
+impl Default for RpcOptions {
+    fn default() -> Self {
+        Self {
+            max_value_bytes: 1024 * 1024,
+        }
+    }
+}
+
 pub trait RpcRouteKey: Sized + std::fmt::Debug + Ord + Clone + 'static {
     fn encoded_len(&self) -> usize;
 

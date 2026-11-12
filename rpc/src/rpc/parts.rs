@@ -1,16 +1,17 @@
 use std::marker::PhantomData;
 
 use bytes::{BufMut, Bytes};
+use ql_codec::Encode;
 use ql_common::ResetCode;
 
-use crate::{codec, read_bytes, ChunkQueue, RpcCodec, RpcError, RpcRead};
+use crate::{codec, read_bytes, ChunkQueue, DecodeOwned, RpcError, RpcOptions, RpcRead};
 
 /// reads a stream of framed byte parts
 ///
 /// dropping the reader stops receiving further parts
 pub struct MultipartReader<H, R>
 where
-    H: RpcCodec,
+    H: DecodeOwned,
     R: RpcRead,
 {
     stream: R,
@@ -22,7 +23,7 @@ where
 /// reads the body of one multipart entry
 pub struct MultipartPart<'a, H, R>
 where
-    H: RpcCodec,
+    H: DecodeOwned,
     R: RpcRead,
 {
     parent: &'a mut MultipartReader<H, R>,
@@ -32,20 +33,20 @@ where
 
 impl<H, R> MultipartReader<H, R>
 where
-    H: RpcCodec,
+    H: DecodeOwned,
     R: RpcRead,
 {
-    pub fn new(stream: R, buffered: ChunkQueue) -> Self {
+    pub fn new(stream: R, buffered: ChunkQueue, options: RpcOptions) -> Self {
         Self {
             stream,
-            frames: PartFrameReader::new(buffered),
+            frames: PartFrameReader::new(buffered, options),
             finished: false,
         }
     }
 
     pub async fn next_part(
         &mut self,
-    ) -> Result<Option<(H, MultipartPart<'_, H, R>)>, RpcError<H::Error, R::Error>> {
+    ) -> Result<Option<(H, MultipartPart<'_, H, R>)>, RpcError<R::Error>> {
         let Some(frame) = self.read_frame().await? else {
             return Ok(None);
         };
@@ -72,7 +73,7 @@ where
         self.reset_inner(code);
     }
 
-    async fn read_frame(&mut self) -> Result<Option<PartFrame<H>>, RpcError<H::Error, R::Error>> {
+    async fn read_frame(&mut self) -> Result<Option<PartFrame<H>>, RpcError<R::Error>> {
         if self.finished {
             return Ok(None);
         }
@@ -105,7 +106,7 @@ where
 
 impl<H, R> Drop for MultipartReader<H, R>
 where
-    H: RpcCodec,
+    H: DecodeOwned,
     R: RpcRead,
 {
     fn drop(&mut self) {
@@ -117,11 +118,11 @@ where
 
 impl<H, R> MultipartPart<'_, H, R>
 where
-    H: RpcCodec,
+    H: DecodeOwned,
     R: RpcRead,
 {
     /// reads part bytes, returning an empty chunk at the end of the part
-    pub async fn read_chunk(&mut self) -> Result<Bytes, RpcError<H::Error, R::Error>> {
+    pub async fn read_chunk(&mut self) -> Result<Bytes, RpcError<R::Error>> {
         if self.finished {
             return Ok(Bytes::new());
         }
@@ -157,7 +158,7 @@ where
 
 impl<H, R> Drop for MultipartPart<'_, H, R>
 where
-    H: RpcCodec,
+    H: DecodeOwned,
     R: RpcRead,
 {
     fn drop(&mut self) {
@@ -167,14 +168,15 @@ where
     }
 }
 
-pub enum PartFrame<H: RpcCodec> {
+pub enum PartFrame<H: DecodeOwned> {
     PartHeader(H),
     BodyBytes(Bytes),
     EndPart,
 }
 
-pub struct PartFrameReader<H: RpcCodec> {
+pub struct PartFrameReader<H: DecodeOwned> {
     bytes: ChunkQueue,
+    options: RpcOptions,
     pending_frame: PendingFrame,
     marker: PhantomData<fn() -> H>,
 }
@@ -186,10 +188,11 @@ enum PendingFrame {
     Body { remaining: usize },
 }
 
-impl<H: RpcCodec> PartFrameReader<H> {
-    pub fn new(bytes: ChunkQueue) -> Self {
+impl<H: DecodeOwned> PartFrameReader<H> {
+    pub fn new(bytes: ChunkQueue, options: RpcOptions) -> Self {
         Self {
             bytes,
+            options,
             pending_frame: PendingFrame::None,
             marker: PhantomData,
         }
@@ -199,7 +202,7 @@ impl<H: RpcCodec> PartFrameReader<H> {
         self.bytes.push(chunk);
     }
 
-    pub fn advance<E>(&mut self) -> Result<Option<PartFrame<H>>, RpcError<H::Error, E>> {
+    pub fn advance<E>(&mut self) -> Result<Option<PartFrame<H>>, RpcError<E>> {
         loop {
             match std::mem::replace(&mut self.pending_frame, PendingFrame::None) {
                 PendingFrame::Body { remaining } => {
@@ -249,6 +252,9 @@ impl<H: RpcCodec> PartFrameReader<H> {
 
                     let kind = FrameKind::try_from(kind).map_err(RpcError::Protocol)?;
                     match kind {
+                        FrameKind::PartHeader if len > self.options.max_value_bytes => {
+                            return Err(crate::Error::LengthOverflow.into());
+                        }
                         FrameKind::BodyChunk => {
                             self.pending_frame = PendingFrame::Body { remaining: len };
                         }
@@ -273,16 +279,20 @@ impl<H: RpcCodec> PartFrameReader<H> {
     }
 }
 
-pub fn encode_part_header<H: RpcCodec>(part_header: &H, out: &mut (impl BufMut + AsMut<[u8]>)) {
+pub fn encode_part_header<H: Encode>(part_header: &H, out: &mut Vec<u8>) {
     codec::encode_tagged_value_part(FrameKind::PartHeader.tag(), part_header, out);
 }
 
-pub fn encode_body_chunk(bytes: &Bytes, out: &mut (impl BufMut + AsMut<[u8]>)) {
-    codec::encode_tagged_value_part(FrameKind::BodyChunk.tag(), bytes, out);
+pub fn encode_body_chunk(bytes: &Bytes, out: &mut Vec<u8>) {
+    let len = u64::try_from(bytes.len()).expect("rpc payload exceeds u64 length framing");
+    out.put_u8(FrameKind::BodyChunk.tag());
+    out.put_u64_le(len);
+    out.extend_from_slice(bytes);
 }
 
-pub fn encode_end_part(out: &mut (impl BufMut + AsMut<[u8]>)) {
-    encode_tagged_empty_part(FrameKind::EndPart, out);
+pub fn encode_end_part(out: &mut Vec<u8>) {
+    out.put_u8(FrameKind::EndPart.tag());
+    out.put_u64_le(0);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -312,12 +322,6 @@ impl TryFrom<u8> for FrameKind {
     }
 }
 
-fn encode_tagged_empty_part<B: BufMut + AsMut<[u8]>>(kind: FrameKind, out: &mut B) {
-    out.put_u8(kind.tag());
-    let payload_start = codec::reserve_length(out);
-    codec::backpatch_length(out, payload_start);
-}
-
 #[cfg(test)]
 mod tests {
     use bytes::Bytes;
@@ -325,6 +329,7 @@ mod tests {
     use super::{
         encode_body_chunk, encode_end_part, encode_part_header, PartFrame, PartFrameReader,
     };
+    use crate::RpcOptions;
 
     #[test]
     fn part_reader_emits_multipart_sequence() {
@@ -336,7 +341,7 @@ mod tests {
         encode_part_header(&b"b.txt".to_vec(), &mut encoded);
         encode_end_part(&mut encoded);
 
-        let mut reader = PartFrameReader::<Vec<u8>>::new(Default::default());
+        let mut reader = PartFrameReader::<Vec<u8>>::new(Default::default(), RpcOptions::default());
         reader.push(Bytes::from(encoded));
 
         match reader.advance::<std::convert::Infallible>().unwrap() {
@@ -382,7 +387,7 @@ mod tests {
         encode_part_header(&b"a.txt".to_vec(), &mut encoded);
         let encoded = Bytes::from(encoded);
 
-        let mut reader = PartFrameReader::<Vec<u8>>::new(Default::default());
+        let mut reader = PartFrameReader::<Vec<u8>>::new(Default::default(), RpcOptions::default());
         reader.push(encoded.slice(..4));
         assert!(reader
             .advance::<std::convert::Infallible>()
@@ -404,7 +409,8 @@ mod tests {
         encode_body_chunk(&Bytes::from_static(b"hello"), &mut encoded);
         let encoded = Bytes::from(encoded);
 
-        let mut reader = PartFrameReader::<Vec<u8>>::new(Default::default());
+        let mut reader =
+            PartFrameReader::<Vec<u8>>::new(Default::default(), RpcOptions { max_value_bytes: 1 });
         reader.push(encoded.slice(..9));
         assert!(reader
             .advance::<std::convert::Infallible>()
@@ -430,7 +436,7 @@ mod tests {
         encode_end_part(&mut encoded);
         encoded[1..9].copy_from_slice(&1u64.to_le_bytes());
 
-        let mut reader = PartFrameReader::<Vec<u8>>::new(Default::default());
+        let mut reader = PartFrameReader::<Vec<u8>>::new(Default::default(), RpcOptions::default());
         reader.push(Bytes::from(encoded));
 
         assert!(matches!(

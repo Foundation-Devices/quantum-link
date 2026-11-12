@@ -1,5 +1,5 @@
 use super::Route;
-use crate::RpcCodec;
+use crate::Codec;
 
 mod client;
 mod server;
@@ -11,8 +11,6 @@ pub use self::{client::*, server::*};
 /// the server reads [`Self::Payload`] to eof and then closes the response side
 /// of the stream
 pub trait Notification: Route {
-    /// codec error for the notification payload
-    type Error;
     /// typed payload emitted by the caller
-    type Payload: RpcCodec<Error = Self::Error>;
+    type Payload: Codec;
 }

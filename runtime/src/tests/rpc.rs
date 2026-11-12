@@ -2,7 +2,6 @@ use std::{
     cell::RefCell,
     future::Future,
     rc::Rc,
-    str::Utf8Error,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -85,7 +84,6 @@ struct Echo;
 test_route!(Echo, 51);
 
 impl ql_rpc::request::Request for Echo {
-    type Error = Utf8Error;
     type Request = String;
     type Response = String;
 }
@@ -95,7 +93,6 @@ struct Download;
 test_route!(Download, 52);
 
 impl ql_rpc::progress::Progress for Download {
-    type Error = core::convert::Infallible;
     type Request = Vec<u8>;
     type Progress = Vec<u8>;
     type Response = Vec<u8>;
