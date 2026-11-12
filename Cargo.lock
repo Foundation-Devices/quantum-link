@@ -1059,6 +1059,7 @@ dependencies = [
  "ql-codec",
  "ql-common",
  "sha2",
+ "zeroize",
 ]
 
 [[package]]

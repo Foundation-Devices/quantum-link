@@ -21,6 +21,7 @@ ql-common = { workspace = true }
 libcrux-aes = { version = "0.0.9", optional = true }
 libcrux-ml-kem = { version = "0.0.10", optional = true }
 sha2 = { version = "0.10", optional = true }
+zeroize = "1"
 
 [dev-dependencies]
 getrandom = "0.2"
