@@ -45,17 +45,17 @@ fn nested_views_mutate_the_encoding_and_outlive_the_reader() {
     let fixed = view.outcome.as_mut().unwrap();
     AsMut::<[u8]>::as_mut(fixed)[0] = 3;
     assert_eq!(AsRef::<[u8]>::as_ref(fixed), &[3, 2]);
-    let (mut key, mut value) = view.attributes.pop_first().unwrap();
-    key.make_ascii_uppercase();
-    value.make_ascii_uppercase();
-    view.attributes.insert(key, value);
+    view.attributes
+        .get_mut("key")
+        .unwrap()
+        .make_ascii_uppercase();
     view.pair.0[0] = b'B';
     view.pair.1.make_ascii_uppercase();
     tail[0] = 10;
 
     expected.items[0] = Some(Item::Text("HELLO".into()));
     expected.outcome = Ok(Box::new([3, 2]));
-    expected.attributes = BTreeMap::from([("KEY".into(), "VALUE".into())]);
+    expected.attributes = BTreeMap::from([("key".into(), "VALUE".into())]);
     expected.pair = (Box::from(&b"Bytes"[..]), "TAIL".into());
     assert_eq!(view.encode_vec(), expected.encode_vec());
     assert_eq!(view.into_owned(), expected);

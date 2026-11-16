@@ -23,6 +23,7 @@
 //! Strings, byte buffers, and vectors and arrays of fixed-width integers are lent as [`Ref`]s,
 //! which dereference to the value, mutably to change the encoding in place if the container is
 //! mutable. Other vectors and arrays decode their elements into `Vec<T::Ref>` and `[T::Ref; N]`.
+//! Map keys always decode owned, because `Ref` types practically never implement `Ord`.
 //!
 //! The integers are laid out like in memory: little-endian, starting a multiple of
 //! `size_of::<T>()` from the start of the encoding, with `size_of::<T>() - 1` zeros around them.

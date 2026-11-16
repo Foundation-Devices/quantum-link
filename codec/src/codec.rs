@@ -311,22 +311,21 @@ where
     B: ByteSlice,
     K: Decode<B> + Ord,
     V: Decode<B>,
-    K::Ref: Ord,
 {
-    type Ref = BTreeMap<K::Ref, V::Ref>;
+    type Ref = BTreeMap<K, V::Ref>;
 
     fn decode(reader: &mut Reader<B>) -> Result<Self, Error> {
         decode_map(reader, K::decode, V::decode)
     }
 
     fn decode_ref(reader: &mut Reader<B>) -> Result<Self::Ref, Error> {
-        decode_map(reader, K::decode_ref, V::decode_ref)
+        decode_map(reader, K::decode, V::decode_ref)
     }
 
     fn from_ref(value: Self::Ref) -> Self {
         value
             .into_iter()
-            .map(|(key, value)| (K::from_ref(key), V::from_ref(value)))
+            .map(|(key, value)| (key, V::from_ref(value)))
             .collect()
     }
 
