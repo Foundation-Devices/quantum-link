@@ -40,8 +40,11 @@ impl Display for PairingToken {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, ql_codec::Codec)]
-#[codec(frozen)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, ql_codec::Codec)]
+#[codec(
+    frozen,
+    derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)
+)]
 #[repr(transparent)]
 pub struct PairingId(pub [u8; PairingId::SIZE]);
 
