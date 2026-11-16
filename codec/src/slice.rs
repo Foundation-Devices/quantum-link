@@ -1,15 +1,18 @@
-use core::{mem, ops::Deref};
+use core::{fmt::Debug, hash::Hash, mem, ops::Deref};
 
 use bytes::{Buf, Bytes, BytesMut};
 
 /// bytes that retain their container type when split
+///
+/// requires the traits that `#[codec(derive(...))]` borrowed forms commonly derive, because std
+/// derives bound the container too, even though the borrowed fields never compare it
 ///
 /// # Safety
 ///
 /// dereferencing must return the same address and length until the container is split.
 /// mutable dereferencing must refer to those same bytes. moving the container must preserve
 /// the allocation and shared access must not modify its bytes.
-pub unsafe trait ByteSlice: Deref<Target = [u8]> + Sized {
+pub unsafe trait ByteSlice: Deref<Target = [u8]> + Sized + Debug + Hash + Ord {
     /// splits off the first `mid` bytes and retains the rest
     ///
     /// panics if `mid` exceeds the slice length

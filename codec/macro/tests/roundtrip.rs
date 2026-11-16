@@ -7,8 +7,8 @@ use std::{
 
 use ql_codec::{Codec, Decode, Encode, Reader, Ref};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Codec)]
-#[codec(frozen)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Codec)]
+#[codec(frozen, derive(Debug, PartialEq, Eq, PartialOrd, Ord))]
 pub struct AppId(pub [u8; 16]);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Codec)]
@@ -83,6 +83,9 @@ pub enum SeekFrom {
 
 #[derive(Debug, Clone, PartialEq, Eq, Codec)]
 pub struct IconSet(pub BTreeMap<String, Vec<u8>>);
+
+#[derive(Debug, Clone, PartialEq, Eq, Codec)]
+pub struct AppGrants(pub BTreeMap<AppId, bool>);
 
 #[derive(Debug, Clone, PartialEq, Eq, Codec)]
 #[codec(frozen)]
@@ -235,6 +238,19 @@ fn maps_roundtrip() {
     let borrowed = IconSet::decode_bytes_ref(bytes.as_slice()).unwrap();
     assert_eq!(*borrowed.0["wallet"], [1, 2, 3]);
     assert_eq!(borrowed.encode_vec(), bytes);
+}
+
+#[test]
+fn maps_with_derived_keys_roundtrip() {
+    let grants = AppGrants(BTreeMap::from([
+        (AppId([2; 16]), false),
+        (AppId([1; 16]), true),
+    ]));
+    roundtrip(&grants);
+
+    let bytes = grants.encode_vec();
+    let borrowed = AppGrants::decode_bytes_ref(bytes.as_slice()).unwrap();
+    assert_eq!(borrowed.into_owned(), grants);
 }
 
 #[test]
