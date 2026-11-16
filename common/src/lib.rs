@@ -50,7 +50,7 @@ impl std::fmt::Display for ResetCode {
 
 ql_codec::varint_wrapper!(ResetCode, u64);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, ql_codec::Codec)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, ql_codec::Codec)]
 #[codec(frozen)]
 #[repr(transparent)]
 pub struct QID(pub [u8; QID::SIZE]);
