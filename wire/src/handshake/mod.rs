@@ -1,6 +1,7 @@
 //! authenticated QuantumLink handshake patterns
 
 use ql_codec::{Decode, Encode, Output, Writer};
+use zeroize::Zeroize;
 
 use crate::{
     Error, HandshakeKind, MlKemCiphertext, MlKemKeyPair, MlKemPublicKey, Nonce, PeerBundle,
@@ -170,6 +171,12 @@ struct SymmetricState {
     chaining_key: [u8; 32],
     handshake_hash: [u8; 32],
     cipher: CipherState,
+}
+
+impl Drop for SymmetricState {
+    fn drop(&mut self) {
+        self.chaining_key.zeroize();
+    }
 }
 
 impl std::fmt::Debug for SymmetricState {
